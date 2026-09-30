@@ -1,0 +1,10 @@
+# Cloudflare Pages / Workers configuration (free tier)
+# Docs: https://developers.cloudflare.com/pages/
+
+name = "widowblue"
+compatibility_date = "2026-09-01"
+pages_build_output_dir = "frontend"
+
+# Optional: Workers for API / orchestrator later
+# [env.production]
+# route = "widowblue.yourdomain.com/*"

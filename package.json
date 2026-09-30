@@ -1,0 +1,30 @@
+{
+  "name": "widowblue",
+  "version": "0.1.0",
+  "description": "Open-source AI Agentic Platform – create software, content and automations without writing code manually",
+  "private": false,
+  "license": "MIT",
+  "author": "damon969gin@gmail.com",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/damon969gin-droid/Widowblue-D24GON.git"
+  },
+  "scripts": {
+    "dev:frontend": "npx serve frontend -p 8080",
+    "dev": "npm run dev:frontend",
+    "build": "echo 'Frontend is static – ready for Cloudflare Pages'",
+    "test": "echo 'No tests yet – coming in MVP'"
+  },
+  "keywords": [
+    "ai",
+    "agentic",
+    "multi-agent",
+    "widowblue",
+    "open-source",
+    "code-generation",
+    "visual-builder"
+  ],
+  "engines": {
+    "node": ">=18"
+  }
+}
