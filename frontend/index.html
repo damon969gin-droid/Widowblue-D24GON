@@ -1,3 +1,4 @@
+<!DOCTYPE html>
 <html lang="it"><head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
@@ -8,112 +9,142 @@
 *{box-sizing:border-box}
 html,body{height:100%;margin:0;background:var(--bg);color:var(--tx);font-family:Rajdhani,system-ui,sans-serif;overflow:hidden}
 canvas{position:fixed;inset:0;width:100%;height:100%;touch-action:none;cursor:grab}
-.top{position:fixed;left:16px;top:calc(12px + env(safe-area-inset-top,0px));pointer-events:none}
+.top{position:fixed;left:16px;top:calc(12px + env(safe-area-inset-top,0px));pointer-events:none;z-index:2}
 .top h1{margin:0;font-size:26px;font-weight:700;letter-spacing:.06em;color:var(--cy)}
 .top p{margin:2px 0 0;font-size:14px;color:var(--dim)}
-.stat{position:fixed;right:16px;top:calc(12px + env(safe-area-inset-top,0px));text-align:right;font-size:14px;color:var(--dim);pointer-events:none}
+.stat{position:fixed;right:16px;top:calc(12px + env(safe-area-inset-top,0px));text-align:right;font-size:14px;color:var(--dim);pointer-events:none;z-index:2}
 .stat b{display:block;font-size:30px;color:var(--am);font-weight:700;line-height:1}
-.bot{position:fixed;left:0;right:0;bottom:0;padding:12px 16px calc(12px + env(safe-area-inset-bottom,0px));background:linear-gradient(transparent,var(--bg) 35%);pointer-events:none}
+.bot{position:fixed;left:0;right:0;bottom:0;padding:12px 16px calc(12px + env(safe-area-inset-bottom,0px));background:linear-gradient(transparent,var(--bg) 35%);pointer-events:none;z-index:2}
 .bot>*{pointer-events:auto}
-#log{height:92px;overflow:hidden;font-size:15px;line-height:1.35;display:flex;flex-direction:column;justify-content:flex-end;margin-bottom:8px;pointer-events:none}
+#log{height:92px;overflow:hidden;font-size:15px;line-height:1.35;display:flex;flex-direction:column;justify-content:flex-end;margin-bottom:8px}
 #log div{color:var(--dim)}#log div:last-child{color:var(--tx)}
 #log i{font-style:normal;color:var(--cy);font-weight:600}
 .row{display:flex;gap:8px;max-width:720px;margin:0 auto}
 input{flex:1;min-width:0;background:rgba(77,225,255,.07);border:1px solid rgba(77,225,255,.4);border-radius:6px;color:var(--tx);font:600 17px Rajdhani,sans-serif;padding:11px 12px}
-input:focus-visible,button:focus-visible{outline:2px solid var(--am);outline-offset:2px}
 button{background:var(--cy);color:#04141c;border:0;border-radius:6px;font:700 17px Rajdhani,sans-serif;padding:0 18px;cursor:pointer}
 button.sec{background:transparent;color:var(--cy);border:1px solid rgba(77,225,255,.4)}
 button:disabled{opacity:.5}
-.plus{width:42px;padding:0;font-size:22px;line-height:1}
-</style>
-</head>
-<body>
-<canvas id="cv"></canvas>
+.plus{width:42px;padding:0;font-size:22px}
+</style></head><body>
+<canvas id="c"></canvas>
 <div class="top"><h1>WIDOW BLUE</h1><p>Rete di agenti al lavoro. Trascina per ruotare.</p></div>
 <div class="stat"><b id="n">0</b>attivi su <span id="t">432</span> agenti</div>
 <div class="bot">
 <div id="log"><div><i>Widow Blue</i> pronta.</div><div>Tutti gli agenti: no</div></div>
 <div class="row">
-<button class="plus sec" id="clip" type="button" title="Allega">+</button>
+<button class="plus sec" id="clip" type="button">+</button>
 <input id="q" type="text" placeholder="Scrivi o parla..." autocomplete="off">
 <button class="sec" id="voice" type="button">Voce</button>
 <button id="go" type="button">Invia</button>
-</div>
-</div>
+</div></div>
 <script>
-const cv=document.getElementById('cv'),x=cv.getContext('2d');
-let W,H,cx,cy,R,t=0;
+const cv=document.getElementById('c'),x=cv.getContext('2d');
+let W,H,cx,cy,R,t=0,yaw=0.4,pit=0.28,drag=false,lx=0,ly=0,running=false;
 const ROLES=['Coordinatore','Frontend','Backend','Design','Database','Media','Voce','Test','Memoria','Deploy','Sicurezza','Documenti'];
-const SUBS=420,RED=0;
+const PH=(1+Math.sqrt(5))/2;
+// Icosahedron vertices (normalized)
+const IV=[];
+[[0,1,PH],[0,1,-PH],[0,-1,PH],[0,-1,-PH],[1,PH,0],[1,-PH,0],[-1,PH,0],[-1,-PH,0],[PH,0,1],[PH,0,-1],[-PH,0,1],[-PH,0,-1]].forEach(v=>{const l=Math.hypot(...v);IV.push(v.map(a=>a/l))});
+const d2=(a,b)=>(a[0]-b[0])**2+(a[1]-b[1])**2+(a[2]-b[2])**2;
+// Pentagrammatic faces of the icosahedron
+const FACES=IV.map((v,i)=>{
+  const nb=IV.map((u,j)=>j).filter(j=>j!==i&&Math.abs(d2(IV[j],v)-4/(1+PH*PH))<.01);
+  const u0=Math.abs(v[0])<.9?[1,0,0]:[0,1,0];
+  let a=[v[1]*u0[2]-v[2]*u0[1],v[2]*u0[0]-v[0]*u0[2],v[0]*u0[1]-v[1]*u0[0]];const al=Math.hypot(...a);a=a.map(q=>q/al);
+  const b=[v[1]*a[2]-v[2]*a[1],v[2]*a[0]-v[0]*a[2],v[0]*a[1]-v[1]*a[0]];
+  nb.sort((p,q)=>{const P=IV[p],Q=IV[q];return Math.atan2(P[0]*b[0]+P[1]*b[1]+P[2]*b[2],P[0]*a[0]+P[1]*a[1]+P[2]*a[2])-Math.atan2(Q[0]*b[0]+Q[1]*b[1]+Q[2]*b[2],Q[0]*a[0]+Q[1]*a[1]+Q[2]*a[2])});
+  return[nb[0],nb[2],nb[4],nb[1],nb[3],nb[0]];
+});
+// Dense agent cloud on Fibonacci shells
 function fib(i,n,r){const y=1-2*(i+.5)/n,q=Math.sqrt(Math.max(0,1-y*y)),a=i*2.39996;return[Math.cos(a)*q*r,y*r,Math.sin(a)*q*r]}
 const nodes=[];
-ROLES.forEach((r,i)=>{const p=fib(i,12,.5);nodes.push({r,p,k:0,s:5,act:0,kids:[]})});
-const shells=[[.2,.72],[.3,.92],[.5,1.12]],speed=[.05,-.035,.02];
-shells.forEach(([share,rad],k)=>{const c=Math.round(SUBS*share);for(let i=0;i<c;i++){
-const j=1+rad*.06*(Math.random()-.5),p=fib(i,c,rad*j);
-let best=0,bd=-9;nodes.slice(0,12).forEach((m,mi)=>{const d=m.p[0]*p[0]+m.p[1]*p[1]+m.p[2]*p[2];if(d>bd){bd=d;best=mi}});
-nodes.push({p,k:k+1,s:1.5+Math.random()*.8,act:0,par:best});nodes[best].kids.push(nodes.length-1)}});
+ROLES.forEach((r,i)=>{nodes.push({r,p:fib(i,12,.48),k:0,s:4.5,act:0,kids:[]})});
+const shells=[[.22,.7],[.32,.9],[.46,1.12]],speed=[.04,-.03,.018];
+shells.forEach(([share,rad],k)=>{const c=Math.round(400*share);for(let i=0;i<c;i++){
+  const j=1+rad*.05*(Math.random()-.5),p=fib(i,c,rad*j);
+  let best=0,bd=-9;nodes.slice(0,12).forEach((m,mi)=>{const d=m.p[0]*p[0]+m.p[1]*p[1]+m.p[2]*p[2];if(d>bd){bd=d;best=mi}});
+  nodes.push({p,k:k+1,s:1.4+Math.random()*.9,act:0,par:best});nodes[best].kids.push(nodes.length-1);
+}});
 document.getElementById('t').textContent=nodes.length;
-let yaw=0,pit=.35,drag=false,lx=0,ly=0;
-cv.addEventListener('pointerdown',e=>{drag=true;lx=e.clientX;ly=e.clientY;cv.setPointerCapture(e.pointerId)});
-cv.addEventListener('pointermove',e=>{if(!drag)return;yaw+=(e.clientX-lx)*.005;pit+=(e.clientY-ly)*.004;lx=e.clientX;ly=e.clientY});
-cv.addEventListener('pointerup',()=>drag=false);
-function resize(){W=cv.width=innerWidth;H=cv.height=innerHeight;cx=W/2;cy=H*.42;R=Math.min(W,H)*.38}
+function resize(){W=cv.width=innerWidth;H=cv.height=innerHeight;cx=W/2;cy=H*0.42;R=Math.min(W,H)*0.36}
 resize();addEventListener('resize',resize);
-function rot(p){let[x0,y0,z0]=p;let c=Math.cos(yaw),s=Math.sin(yaw);let x1=x0*c-z0*s,z1=x0*s+z0*c;c=Math.cos(pit);s=Math.sin(pit);let y1=y0*c-z1*s,z2=y0*s+z1*c;const sc=1/(1.2+z2*.55);return[cx+x1*R*sc,cy+y1*R*sc,z2,sc]}
+cv.addEventListener('pointerdown',e=>{drag=true;lx=e.clientX;ly=e.clientY;cv.setPointerCapture(e.pointerId)});
+cv.addEventListener('pointermove',e=>{if(!drag)return;yaw+=(e.clientX-lx)*0.005;pit+=(e.clientY-ly)*0.004;lx=e.clientX;ly=e.clientY});
+cv.addEventListener('pointerup',()=>drag=false);
+function proj(p){
+  let[x0,y0,z0]=p;
+  let c=Math.cos(yaw),s=Math.sin(yaw);let x1=x0*c-z0*s,z1=x0*s+z0*c;
+  c=Math.cos(pit);s=Math.sin(pit);let y1=y0*c-z1*s,z2=y0*s+z1*c;
+  const sc=1/(1.15+z2*0.5);return[cx+x1*R*sc,cy+y1*R*sc,z2,sc];
+}
 const pulses=[];
-function draw(){t+=.016;x.clearRect(0,0,W,H);
-// slow shell rotation in data
-shells.forEach((_,k)=>{const sp=speed[k];nodes.forEach(n=>{if(n.k===k+1){const a=sp*.016;const c=Math.cos(a),s=Math.sin(a);const[px,py,pz]=n.p;n.p=[px*c-pz*s,py,px*s+pz*c]}})});
-const P=nodes.map(n=>rot(n.p));
-// soft links from center
-x.globalAlpha=.12;x.strokeStyle='#4de1ff';x.lineWidth=.6;
-for(let i=0;i<12;i++){const a=P[i];x.beginPath();x.moveTo(cx,cy);x.lineTo(a[0],a[1]);x.stroke()}
-// star wireframe among role nodes
-x.globalAlpha=.5;x.strokeStyle='rgba(232,251,255,.85)';x.lineWidth=1.2;
-const star=[0,4,8,1,5,9,2,6,10,3,7,11,0];
-x.beginPath();star.forEach((i,k)=>{const q=P[i];k?x.lineTo(q[0],q[1]):x.moveTo(q[0],q[1])});x.stroke();
-// center glow
-const pu=1+Math.sin(t*2)*.08;const gr=x.createRadialGradient(cx,cy,0,cx,cy,R*.16*pu);
-gr.addColorStop(0,'rgba(232,251,255,1)');gr.addColorStop(.35,'rgba(77,225,255,.65)');gr.addColorStop(1,'rgba(77,225,255,0)');
-x.globalAlpha=1;x.fillStyle=gr;x.beginPath();x.arc(cx,cy,R*.16*pu,0,6.283);x.fill();
-// pulses
-for(let i=pulses.length-1;i>=0;i--){const p=pulses[i];p.t+=.03;if(p.t>1){pulses.splice(i,1);continue}
-const a=p.from>=0?P[p.from]:[cx,cy],b=P[p.to];
-x.fillStyle='#ffb347';x.beginPath();x.arc(a[0]+(b[0]-a[0])*p.t,a[1]+(b[1]-a[1])*p.t,2.6,0,6.283);x.fill()}
-// nodes depth-sorted
-const ord=P.map((q,i)=>i).sort((a,b)=>P[b][2]-P[a][2]);let act=0;
-ord.forEach(i=>{const n=nodes[i],q=P[i];n.act*=.985;const g=n.act>.05;if(g)act++;
-const depth=Math.max(.2,Math.min(1,.7-q[2]*.45));
-x.globalAlpha=g?1:depth*(n.k?0.7:1);
-x.fillStyle=g?'#ffb347':'#4de1ff';
-x.beginPath();x.arc(q[0],q[1],(n.s+(g?n.act*2.2:0))*q[3],0,6.283);x.fill();
-if(n.k===0&&W>480&&q[2]<.35){x.globalAlpha=depth;x.fillStyle=g?'#ffb347':'#8fb5c7';x.font='600 12px Rajdhani,sans-serif';x.textAlign='center';x.fillText(n.r,q[0],q[1]-12)}});
-x.globalAlpha=1;document.getElementById('n').textContent=act;requestAnimationFrame(draw)}
+function draw(){
+  t+=0.016;x.clearRect(0,0,W,H);
+  // rotate shells slowly
+  shells.forEach((_,k)=>{const a=speed[k]*0.016,c=Math.cos(a),s=Math.sin(a);
+    nodes.forEach(n=>{if(n.k===k+1){const[px,py,pz]=n.p;n.p=[px*c-pz*s,py,px*s+pz*c]}})});
+  // auto-spin when not dragging
+  if(!drag)yaw+=0.003;
+  const P=nodes.map(n=>proj(n.p));
+  // radial rays from center to role nodes
+  x.globalAlpha=0.14;x.strokeStyle='#4de1ff';x.lineWidth=0.7;
+  for(let i=0;i<12;i++){x.beginPath();x.moveTo(cx,cy);x.lineTo(P[i][0],P[i][1]);x.stroke()}
+  // ICOSAHEDRON + PENTAGRAMMATIC faces (the central star)
+  const c1=Math.cos(yaw),s1=Math.sin(yaw),c2=Math.cos(pit),s2=Math.sin(pit);
+  const SV=IV.map(v=>{
+    let p=v.map(a=>a*0.42);
+    p=[p[0]*c1+p[2]*s1,p[1],-p[0]*s1+p[2]*c1];
+    p=[p[0],p[1]*c2-p[2]*s2,p[1]*s2+p[2]*c2];
+    return proj(p);
+  });
+  FACES.map(f=>({f,z:f.slice(0,5).reduce((s,i)=>s+SV[i][2],0)})).sort((a,b)=>b.z-a.z).forEach(({f})=>{
+    x.beginPath();f.forEach((i,k)=>k?x.lineTo(SV[i][0],SV[i][1]):x.moveTo(SV[i][0],SV[i][1]));x.closePath();
+    x.fillStyle='rgba(77,225,255,.08)';x.fill();
+    x.strokeStyle='rgba(232,251,255,.85)';x.lineWidth=1.25;x.stroke();
+  });
+  SV.forEach(q=>{x.fillStyle='#e8fbff';x.beginPath();x.arc(q[0],q[1],2.5*q[3],0,6.283);x.fill()});
+  // core glow
+  const pu=1+Math.sin(t*2)*0.1;
+  const gr=x.createRadialGradient(cx,cy,0,cx,cy,R*0.15*pu);
+  gr.addColorStop(0,'rgba(232,251,255,1)');gr.addColorStop(0.4,'rgba(77,225,255,.7)');gr.addColorStop(1,'rgba(77,225,255,0)');
+  x.globalAlpha=1;x.fillStyle=gr;x.beginPath();x.arc(cx,cy,R*0.15*pu,0,6.283);x.fill();
+  // pulses
+  for(let i=pulses.length-1;i>=0;i--){const p=pulses[i];p.t+=0.028;if(p.t>1){pulses.splice(i,1);continue}
+    const a=p.from>=0?P[p.from]:[cx,cy],b=P[p.to];
+    x.fillStyle='#ffb347';x.beginPath();x.arc(a[0]+(b[0]-a[0])*p.t,a[1]+(b[1]-a[1])*p.t,2.5,0,6.283);x.fill();
+  }
+  // agent nodes depth sorted
+  const ord=P.map((q,i)=>i).sort((a,b)=>P[b][2]-P[a][2]);let act=0;
+  ord.forEach(i=>{
+    const n=nodes[i],q=P[i];n.act*=0.986;const g=n.act>0.05;if(g)act++;
+    const depth=Math.max(0.22,Math.min(1,0.68-q[2]*0.45));
+    x.globalAlpha=g?1:depth*(n.k?0.72:1);
+    x.fillStyle=g?'#ffb347':'#4de1ff';
+    x.beginPath();x.arc(q[0],q[1],(n.s+(g?n.act*2.2:0))*q[3],0,6.283);x.fill();
+    if(n.k===0&&W>500&&q[2]<0.4){
+      x.globalAlpha=depth;x.fillStyle=g?'#ffb347':'#8fb5c7';
+      x.font='600 12px Rajdhani,sans-serif';x.textAlign='center';x.fillText(n.r,q[0],q[1]-11);
+    }
+  });
+  x.globalAlpha=1;document.getElementById('n').textContent=act;
+  requestAnimationFrame(draw);
+}
 requestAnimationFrame(draw);
 const log=document.getElementById('log');
 function say(role,txt){const d=document.createElement('div');d.innerHTML='<i>'+role+'</i> '+txt;log.appendChild(d);while(log.children.length>4)log.removeChild(log.firstChild)}
 function fire(i){if(i<0||i>=nodes.length)return;const n=nodes[i];n.act=1;pulses.push({from:-1,to:i,t:0});
-(n.kids||[]).forEach((k,j)=>setTimeout(()=>{if(nodes[k]){nodes[k].act=1;pulses.push({from:i,to:k,t:0})}},j*18))}
-const steps=[[0,'Analizzo la richiesta','Coordinatore'],[3,'Palette e layout definiti','Design'],[1,'Genero i componenti Next.js e Tailwind','Frontend'],[2,'Creo API e autenticazione','Backend'],[4,'Configuro il database gratuito','Database'],[5,'Preparo immagini e splash','Media'],[7,'Eseguo i test','Test'],[8,'Salvo tutto in memoria','Memoria'],[9,'Pubblico','Deploy']];
-let running=false;
+  (n.kids||[]).forEach((k,j)=>setTimeout(()=>{if(nodes[k]){nodes[k].act=1;pulses.push({from:i,to:k,t:0})}},j*16));
+}
+const steps=[[0,'Analizzo la richiesta','Coordinatore'],[3,'Palette e layout definiti','Design'],[1,'Genero i componenti Next.js e Tailwind','Frontend'],[2,'Creo API e autenticazione','Backend'],[4,'Configuro il database','Database'],[5,'Preparo immagini e splash','Media'],[7,'Eseguo i test','Test'],[8,'Salvo in memoria','Memoria'],[9,'Pubblico','Deploy']];
 function run(){
-  if(running)return;
-  const q=document.getElementById('q').value.trim();
-  if(!q)return;
-  running=true;
-  const go=document.getElementById('go');
-  if(go)go.disabled=true;
-  say('Coordinatore','sto elaborando...');
-  fire(0);
-  let i=0;
-  const iv=setInterval(()=>{
+  if(running)return;const q=document.getElementById('q').value.trim();if(!q)return;
+  running=true;const go=document.getElementById('go');if(go)go.disabled=true;
+  say('Coordinatore','sto elaborando...');fire(0);
+  let i=0;const iv=setInterval(()=>{
     if(i<steps.length){const[s,m,r]=steps[i++];fire(s);say(r,m);}
     else{clearInterval(iv);running=false;if(go)go.disabled=false;say('Widow Blue','completato');}
-  },850);
-  document.getElementById('q').value='';
+  },850);document.getElementById('q').value='';
 }
 document.getElementById('go').onclick=run;
 document.getElementById('q').addEventListener('keydown',e=>{if(e.key==='Enter')run()});
-</script>
-</body></html>
+</script></body></html>
