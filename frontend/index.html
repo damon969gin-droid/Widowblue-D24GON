@@ -16,37 +16,57 @@ canvas{position:fixed;inset:0;width:100%;height:100%;touch-action:none;cursor:gr
 .stat b{display:block;font-size:30px;color:var(--am);font-weight:700;line-height:1}
 .bot{position:fixed;left:0;right:0;bottom:0;padding:12px 16px calc(12px + env(safe-area-inset-bottom,0px));background:linear-gradient(transparent,var(--bg) 35%);pointer-events:none;z-index:2}
 .bot>*{pointer-events:auto}
-#log{height:92px;overflow:hidden;font-size:15px;line-height:1.35;display:flex;flex-direction:column;justify-content:flex-end;margin-bottom:8px}
+#log{height:88px;overflow:hidden;font-size:14px;line-height:1.35;display:flex;flex-direction:column;justify-content:flex-end;margin-bottom:6px}
 #log div{color:var(--dim)}#log div:last-child{color:var(--tx)}
 #log i{font-style:normal;color:var(--cy);font-weight:600}
-.row{display:flex;gap:8px;max-width:720px;margin:0 auto}
-input{flex:1;min-width:0;background:rgba(77,225,255,.07);border:1px solid rgba(77,225,255,.4);border-radius:6px;color:var(--tx);font:600 17px Rajdhani,sans-serif;padding:11px 12px}
-button{background:var(--cy);color:#04141c;border:0;border-radius:6px;font:700 17px Rajdhani,sans-serif;padding:0 18px;cursor:pointer}
+#chips{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px;max-width:720px;margin-left:auto;margin-right:auto}
+.chip{font-size:12px;padding:3px 8px;border-radius:4px;background:rgba(77,225,255,.12);border:1px solid rgba(77,225,255,.35);color:var(--tx);cursor:pointer}
+.chip:hover{border-color:var(--am);color:var(--am)}
+.row{display:flex;gap:8px;max-width:720px;margin:0 auto;align-items:center}
+input{flex:1;min-width:0;background:rgba(77,225,255,.07);border:1px solid rgba(77,225,255,.4);border-radius:6px;color:var(--tx);font:600 16px Rajdhani,sans-serif;padding:11px 12px}
+button{background:var(--cy);color:#04141c;border:0;border-radius:6px;font:700 16px Rajdhani,sans-serif;padding:0 16px;height:42px;cursor:pointer;white-space:nowrap}
 button.sec{background:transparent;color:var(--cy);border:1px solid rgba(77,225,255,.4)}
-button:disabled{opacity:.5}
+button:disabled{opacity:.5;cursor:not-allowed}
+button.rec{border-color:#ff6b6b;color:#ff6b6b;animation:pulse 1s infinite}
+@keyframes pulse{50%{opacity:.6}}
 .plus{width:42px;padding:0;font-size:22px}
+#panel{display:none;position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);width:min(92vw,560px);max-height:70vh;overflow:auto;background:rgba(4,10,18,.96);border:1px solid rgba(77,225,255,.4);border-radius:10px;padding:16px;z-index:20;box-shadow:0 20px 60px rgba(0,0,0,.5)}
+#panel h3{margin:0 0 10px;color:var(--cy);font-size:18px}
+#panel pre{white-space:pre-wrap;font-size:13px;line-height:1.4;color:var(--tx);margin:0;font-family:ui-monospace,monospace}
+#panel .actions{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap}
+#panel .actions button{height:36px;font-size:14px}
+#overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:15}
+.toggle{font-size:12px;padding:4px 10px;border-radius:4px;border:1px solid rgba(77,225,255,.35);background:transparent;color:var(--dim);cursor:pointer;margin-bottom:6px}
+.toggle.on{color:var(--am);border-color:var(--am)}
 </style></head><body>
 <canvas id="c"></canvas>
 <div class="top"><h1>WIDOW BLUE</h1><p>Rete di agenti al lavoro. Trascina per ruotare.</p></div>
 <div class="stat"><b id="n">0</b>attivi su <span id="t">432</span> agenti</div>
 <div class="bot">
 <div id="log"><div><i>Widow Blue</i> pronta.</div><div>Tutti gli agenti: no</div></div>
+<button type="button" class="toggle" id="allAgents">Tutti gli agenti: no</button>
+<div id="chips"></div>
 <div class="row">
-<button class="plus sec" id="clip" type="button">+</button>
+<button class="plus sec" id="clip" type="button" title="Allega file">+</button>
+<input type="file" id="file" multiple hidden accept="image/*,.txt,.md,.json,.csv,.js,.ts,.tsx,.jsx,.py,.html,.css,.yml,.yaml,.xml,.pdf,.docx">
 <input id="q" type="text" placeholder="Scrivi o parla..." autocomplete="off">
 <button class="sec" id="voice" type="button">Voce</button>
 <button id="go" type="button">Invia</button>
 </div></div>
+<div id="overlay"></div>
+<div id="panel"><h3 id="ptitle">Risultato</h3><pre id="pbody"></pre><div class="actions">
+<button type="button" id="pcopy">Copia</button>
+<button type="button" id="pdl" class="sec">Scarica</button>
+<button type="button" id="pclose" class="sec">Chiudi</button>
+</div></div>
 <script>
 const cv=document.getElementById('c'),x=cv.getContext('2d');
-let W,H,cx,cy,R,t=0,yaw=0.4,pit=0.28,drag=false,lx=0,ly=0,running=false;
+let W,H,cx,cy,R,t=0,yaw=0.4,pit=0.28,drag=false,lx=0,ly=0,running=false,allMode=false;
 const ROLES=['Coordinatore','Frontend','Backend','Design','Database','Media','Voce','Test','Memoria','Deploy','Sicurezza','Documenti'];
 const PH=(1+Math.sqrt(5))/2;
-// Icosahedron vertices (normalized)
 const IV=[];
 [[0,1,PH],[0,1,-PH],[0,-1,PH],[0,-1,-PH],[1,PH,0],[1,-PH,0],[-1,PH,0],[-1,-PH,0],[PH,0,1],[PH,0,-1],[-PH,0,1],[-PH,0,-1]].forEach(v=>{const l=Math.hypot(...v);IV.push(v.map(a=>a/l))});
 const d2=(a,b)=>(a[0]-b[0])**2+(a[1]-b[1])**2+(a[2]-b[2])**2;
-// Pentagrammatic faces of the icosahedron
 const FACES=IV.map((v,i)=>{
   const nb=IV.map((u,j)=>j).filter(j=>j!==i&&Math.abs(d2(IV[j],v)-4/(1+PH*PH))<.01);
   const u0=Math.abs(v[0])<.9?[1,0,0]:[0,1,0];
@@ -55,7 +75,6 @@ const FACES=IV.map((v,i)=>{
   nb.sort((p,q)=>{const P=IV[p],Q=IV[q];return Math.atan2(P[0]*b[0]+P[1]*b[1]+P[2]*b[2],P[0]*a[0]+P[1]*a[1]+P[2]*a[2])-Math.atan2(Q[0]*b[0]+Q[1]*b[1]+Q[2]*b[2],Q[0]*a[0]+Q[1]*a[1]+Q[2]*a[2])});
   return[nb[0],nb[2],nb[4],nb[1],nb[3],nb[0]];
 });
-// Dense agent cloud on Fibonacci shells
 function fib(i,n,r){const y=1-2*(i+.5)/n,q=Math.sqrt(Math.max(0,1-y*y)),a=i*2.39996;return[Math.cos(a)*q*r,y*r,Math.sin(a)*q*r]}
 const nodes=[];
 ROLES.forEach((r,i)=>{nodes.push({r,p:fib(i,12,.48),k:0,s:4.5,act:0,kids:[]})});
@@ -80,16 +99,12 @@ function proj(p){
 const pulses=[];
 function draw(){
   t+=0.016;x.clearRect(0,0,W,H);
-  // rotate shells slowly
   shells.forEach((_,k)=>{const a=speed[k]*0.016,c=Math.cos(a),s=Math.sin(a);
     nodes.forEach(n=>{if(n.k===k+1){const[px,py,pz]=n.p;n.p=[px*c-pz*s,py,px*s+pz*c]}})});
-  // auto-spin when not dragging
   if(!drag)yaw+=0.003;
   const P=nodes.map(n=>proj(n.p));
-  // radial rays from center to role nodes
   x.globalAlpha=0.14;x.strokeStyle='#4de1ff';x.lineWidth=0.7;
   for(let i=0;i<12;i++){x.beginPath();x.moveTo(cx,cy);x.lineTo(P[i][0],P[i][1]);x.stroke()}
-  // ICOSAHEDRON + PENTAGRAMMATIC faces (the central star)
   const c1=Math.cos(yaw),s1=Math.sin(yaw),c2=Math.cos(pit),s2=Math.sin(pit);
   const SV=IV.map(v=>{
     let p=v.map(a=>a*0.42);
@@ -103,17 +118,14 @@ function draw(){
     x.strokeStyle='rgba(232,251,255,.85)';x.lineWidth=1.25;x.stroke();
   });
   SV.forEach(q=>{x.fillStyle='#e8fbff';x.beginPath();x.arc(q[0],q[1],2.5*q[3],0,6.283);x.fill()});
-  // core glow
   const pu=1+Math.sin(t*2)*0.1;
   const gr=x.createRadialGradient(cx,cy,0,cx,cy,R*0.15*pu);
   gr.addColorStop(0,'rgba(232,251,255,1)');gr.addColorStop(0.4,'rgba(77,225,255,.7)');gr.addColorStop(1,'rgba(77,225,255,0)');
   x.globalAlpha=1;x.fillStyle=gr;x.beginPath();x.arc(cx,cy,R*0.15*pu,0,6.283);x.fill();
-  // pulses
   for(let i=pulses.length-1;i>=0;i--){const p=pulses[i];p.t+=0.028;if(p.t>1){pulses.splice(i,1);continue}
     const a=p.from>=0?P[p.from]:[cx,cy],b=P[p.to];
     x.fillStyle='#ffb347';x.beginPath();x.arc(a[0]+(b[0]-a[0])*p.t,a[1]+(b[1]-a[1])*p.t,2.5,0,6.283);x.fill();
   }
-  // agent nodes depth sorted
   const ord=P.map((q,i)=>i).sort((a,b)=>P[b][2]-P[a][2]);let act=0;
   ord.forEach(i=>{
     const n=nodes[i],q=P[i];n.act*=0.986;const g=n.act>0.05;if(g)act++;
@@ -131,19 +143,144 @@ function draw(){
 }
 requestAnimationFrame(draw);
 const log=document.getElementById('log');
-function say(role,txt){const d=document.createElement('div');d.innerHTML='<i>'+role+'</i> '+txt;log.appendChild(d);while(log.children.length>4)log.removeChild(log.firstChild)}
+const files=[];
+let lastResult='';
+function say(role,txt){const d=document.createElement('div');d.innerHTML='<i>'+role+'</i> '+txt;log.appendChild(d);while(log.children.length>5)log.removeChild(log.firstChild)}
 function fire(i){if(i<0||i>=nodes.length)return;const n=nodes[i];n.act=1;pulses.push({from:-1,to:i,t:0});
   (n.kids||[]).forEach((k,j)=>setTimeout(()=>{if(nodes[k]){nodes[k].act=1;pulses.push({from:i,to:k,t:0})}},j*16));
 }
-const steps=[[0,'Analizzo la richiesta','Coordinatore'],[3,'Palette e layout definiti','Design'],[1,'Genero i componenti Next.js e Tailwind','Frontend'],[2,'Creo API e autenticazione','Backend'],[4,'Configuro il database','Database'],[5,'Preparo immagini e splash','Media'],[7,'Eseguo i test','Test'],[8,'Salvo in memoria','Memoria'],[9,'Pubblico','Deploy']];
+function fireAll(){for(let i=0;i<12;i++)setTimeout(()=>fire(i),i*80)}
+function renderChips(){
+  const c=document.getElementById('chips');c.innerHTML='';
+  files.forEach((f,i)=>{const s=document.createElement('span');s.className='chip';s.textContent=f.name+' \u00d7';s.onclick=()=>{files.splice(i,1);renderChips()};c.appendChild(s)});
+}
+document.getElementById('clip').onclick=()=>document.getElementById('file').click();
+document.getElementById('file').onchange=async e=>{
+  for(const f of e.target.files){
+    const item={name:f.name,type:f.type,size:f.size};
+    if(f.type.startsWith('text/')||/\.(txt|md|json|csv|js|ts|tsx|jsx|py|html|css|yml|yaml|xml)$/i.test(f.name)){
+      item.text=(await f.text()).slice(0,40000);
+    } else if(f.type.startsWith('image/')){ item.note='immagine'; }
+    else { item.note='allegato'; }
+    files.push(item);
+  }
+  e.target.value='';renderChips();
+  say('Media',files.length+' file allegati');
+};
+let rec=null,listening=false;
+const voiceBtn=document.getElementById('voice');
+const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+if(SR){
+  rec=new SR();rec.lang='it-IT';rec.interimResults=false;rec.continuous=false;
+  rec.onresult=e=>{const t=e.results[0][0].transcript;document.getElementById('q').value=(document.getElementById('q').value+' '+t).trim();say('Voce',t)};
+  rec.onend=()=>{listening=false;voiceBtn.classList.remove('rec');voiceBtn.textContent='Voce'};
+  rec.onerror=()=>{listening=false;voiceBtn.classList.remove('rec');voiceBtn.textContent='Voce';say('Voce','microfono non disponibile')};
+}
+voiceBtn.onclick=()=>{
+  if(!rec){say('Voce','Web Speech non supportato su questo browser');return}
+  if(listening){rec.stop();return}
+  listening=true;voiceBtn.classList.add('rec');voiceBtn.textContent='Ascolto\u2026';rec.start();
+};
+const allBtn=document.getElementById('allAgents');
+allBtn.onclick=()=>{
+  allMode=!allMode;
+  allBtn.textContent='Tutti gli agenti: '+(allMode?'s\u00ec':'no');
+  allBtn.classList.toggle('on',allMode);
+  say('Widow Blue',allMode?'modalit\u00e0 tutti gli agenti attiva':'modalit\u00e0 selettiva');
+};
+function analyze(q,atts){
+  const ql=q.toLowerCase();
+  const wants={
+    web:/sito|web|landing|html|next|react|frontend|pagina/.test(ql),
+    api:/api|backend|server|endpoint|fastapi|node/.test(ql),
+    db:/database|db|postgres|sql|supabase|neon/.test(ql),
+    mobile:/app|mobile|flutter|android|ios|swift|kotlin/.test(ql),
+    design:/design|ui|ux|logo|colore|palette|figma/.test(ql),
+    deploy:/deploy|vercel|cloudflare|pubblica|hosting/.test(ql),
+    auth:/login|auth|autenticazione|oauth|utente/.test(ql),
+    media:/immagine|video|logo|splash|avatar|musica/.test(ql),
+  };
+  const stack=[];
+  if(wants.web) stack.push('Next.js + Tailwind + React');
+  if(wants.api) stack.push('FastAPI (Python) o Node/Express');
+  if(wants.db) stack.push('PostgreSQL (Neon/Supabase)');
+  if(wants.mobile) stack.push('Flutter (Dart)');
+  if(wants.auth) stack.push('Auth JWT / Supabase Auth');
+  if(!stack.length) stack.push('Next.js + Tailwind','API leggera','Deploy Cloudflare/Vercel');
+  const plan=[
+    '1. Coordinatore: scompone la richiesta e assegna gli agenti',
+    '2. Design: palette cyberpunk (#040a12, #4de1ff, #ffb347), layout HUD',
+    wants.web?'3. Frontend: componenti React/Next, routing, responsive':'3. Frontend: interfaccia minima coerente con WidowBlue',
+    wants.api?'4. Backend: API REST, validazione, errori strutturati':'4. Backend: endpoint essenziali',
+    wants.db?'5. Database: schema, migrazioni, indici':'5. Database: storage leggero o KV',
+    wants.auth?'6. Auth: registrazione, login, sessioni':'6. Auth: opzionale / guest',
+    wants.media?'7. Media: asset, splash, loghi':'7. Media: placeholder e icone',
+    '8. Test: smoke test e checklist QA',
+    '9. Memoria: salvataggio progetto e preferenze',
+    '10. Deploy: Cloudflare Pages / Workers o Vercel',
+  ];
+  const filesOut=[];
+  if(wants.web||!Object.values(wants).some(Boolean)){
+    filesOut.push({name:'app/page.tsx',content:'export default function Page(){\n  return (\n    <main className="min-h-screen bg-[#040a12] text-[#cfeaf5] p-8">\n      <h1 className="text-3xl font-bold text-[#4de1ff]">'+q.slice(0,60).replace(/`/g,"'")+'</h1>\n      <p className="mt-2 text-[#5f8296]">Generato da WidowBlue</p>\n    </main>\n  )\n}\n'});
+  }
+  if(wants.api){
+    filesOut.push({name:'api/main.py',content:'from fastapi import FastAPI\napp = FastAPI(title="WidowBlue API")\n\n@app.get("/health")\ndef health():\n    return {"status": "ok", "service": "widowblue"}\n\n@app.post("/run")\ndef run(payload: dict):\n    return {"echo": payload, "agents": ["Coordinatore","Backend"]}\n'});
+  }
+  if(wants.db){
+    filesOut.push({name:'schema.sql',content:'-- WidowBlue schema\nCREATE TABLE projects (\n  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),\n  title TEXT NOT NULL,\n  prompt TEXT,\n  created_at TIMESTAMPTZ DEFAULT now()\n);\n'});
+  }
+  let attNote='';
+  if(atts.length){
+    attNote='\nAllegati:\n'+atts.map(a=>'- '+a.name+(a.text?' (testo '+a.text.length+' car)':a.note?(' ('+a.note+')'):'')).join('\n');
+  }
+  return {
+    title:'Piano WidowBlue',
+    body:'RICHIESTA\n'+q+attNote+'\n\nSTACK CONSIGLIATO\n- '+stack.join('\n- ')+'\n\nPIANO MULTI-AGENTE\n'+plan.join('\n')+'\n\nFILE GENERATI (bozza)\n'+(filesOut.map(f=>'### '+f.name+'\n'+f.content).join('\n')||'(nessun file specifico)')+'\n\nPROSSIMI PASSI\n1. Conferma stack e scope\n2. Genera repository GitHub\n3. Deploy su Cloudflare\n4. Collega provider AI per codice completo\n\n\u2014 WidowBlue \u00b7 open source \u00b7 damon969gin@gmail.com'
+  };
+}
+const steps=[[0,'Analizzo la richiesta','Coordinatore'],[3,'Palette e layout definiti','Design'],[1,'Genero componenti UI','Frontend'],[2,'Preparo API e logica','Backend'],[4,'Configuro persistenza','Database'],[5,'Gestisco media e asset','Media'],[7,'Eseguo checklist test','Test'],[8,'Salvo in memoria','Memoria'],[9,'Preparo deploy','Deploy'],[10,'Verifico sicurezza','Sicurezza'],[11,'Documento il progetto','Documenti']];
+function showPanel(title,body){
+  lastResult=body;
+  document.getElementById('ptitle').textContent=title;
+  document.getElementById('pbody').textContent=body;
+  document.getElementById('panel').style.display='block';
+  document.getElementById('overlay').style.display='block';
+}
+document.getElementById('pclose').onclick=document.getElementById('overlay').onclick=()=>{
+  document.getElementById('panel').style.display='none';
+  document.getElementById('overlay').style.display='none';
+};
+document.getElementById('pcopy').onclick=async()=>{
+  try{await navigator.clipboard.writeText(lastResult);say('Widow Blue','copiato negli appunti')}catch(e){say('Widow Blue','copia non riuscita')}
+};
+document.getElementById('pdl').onclick=()=>{
+  const blob=new Blob([lastResult],{type:'text/plain'});
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='widowblue-piano.txt';a.click();
+};
 function run(){
-  if(running)return;const q=document.getElementById('q').value.trim();if(!q)return;
+  if(running)return;
+  const q=document.getElementById('q').value.trim();
+  if(!q&&!files.length){say('Widow Blue','scrivi un idea o allega un file');return}
   running=true;const go=document.getElementById('go');if(go)go.disabled=true;
-  say('Coordinatore','sto elaborando...');fire(0);
-  let i=0;const iv=setInterval(()=>{
-    if(i<steps.length){const[s,m,r]=steps[i++];fire(s);say(r,m);}
-    else{clearInterval(iv);running=false;if(go)go.disabled=false;say('Widow Blue','completato');}
-  },850);document.getElementById('q').value='';
+  const prompt=q||'(solo allegati)';
+  say('Tu',prompt.slice(0,80)+(prompt.length>80?'\u2026':''));
+  say('Coordinatore','sto elaborando...');
+  if(allMode)fireAll();else fire(0);
+  let i=0;
+  const iv=setInterval(()=>{
+    if(i<steps.length){
+      const[s,m,r]=steps[i++];
+      fire(s);say(r,m);
+    }else{
+      clearInterval(iv);
+      const res=analyze(prompt,files.slice());
+      showPanel(res.title,res.body);
+      say('Widow Blue','piano pronto');
+      running=false;if(go)go.disabled=false;
+      files.length=0;renderChips();
+    }
+  },700);
+  document.getElementById('q').value='';
 }
 document.getElementById('go').onclick=run;
 document.getElementById('q').addEventListener('keydown',e=>{if(e.key==='Enter')run()});
