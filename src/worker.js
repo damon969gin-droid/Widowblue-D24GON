@@ -36,6 +36,8 @@ async function handleApi(request, env, url) {
           kv: !!env.AUTH_KV,
           brave: !!env.BRAVE_API_KEY,
           google: !!(env.GOOGLE_API_KEY && env.GOOGLE_CSE_ID),
+          bing: !!env.BING_API_KEY,
+          perplexity: !!env.PERPLEXITY_API_KEY,
           endpoints: ['/api/health', '/api/auth/*', '/api/search', '/api/orchestrate'],
         },
         200,
@@ -113,7 +115,7 @@ function buildPlan(prompt, attachments, deep, search) {
     steps: deep
       ? [
           'Coordinatore: WBS e rischi',
-          'Ricerca multi-provider (Wikipedia, DDG, Brave, Google)',
+          'Ricerca multi-provider (Wiki, DDG, Google, Bing, Brave, Perplexity)',
           'Design system',
           'Frontend',
           'Backend API',
