@@ -1,6 +1,12 @@
-# Cloudflare Pages – static frontend
-# https://developers.cloudflare.com/pages/
+# Cloudflare – static assets deploy
+# Works with both Pages and `wrangler deploy`
 
 name = "widowblue-d24gon"
 compatibility_date = "2026-09-01"
+
+# For Pages Git builds
 pages_build_output_dir = "frontend"
+
+# For `npx wrangler deploy` (used by current build settings)
+[assets]
+directory = "./frontend"
