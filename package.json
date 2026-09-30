@@ -1,7 +1,7 @@
 {
   "name": "widowblue",
-  "version": "0.1.0",
-  "description": "Open-source AI Agentic Platform – create software, content and automations without writing code manually",
+  "version": "0.2.0",
+  "description": "Open-source AI Agentic Platform – create software without writing code manually",
   "private": false,
   "license": "MIT",
   "author": "damon969gin@gmail.com",
@@ -11,20 +11,14 @@
   },
   "scripts": {
     "dev:frontend": "npx serve frontend -p 8080",
-    "dev": "npm run dev:frontend",
-    "build": "echo 'Static frontend – Cloudflare Pages will publish the frontend/ folder'",
-    "test": "echo 'No tests yet – coming in MVP'"
+    "dev": "npx wrangler dev",
+    "build": "echo 'Worker + assets – ready for wrangler deploy'",
+    "deploy": "npx wrangler deploy",
+    "test": "echo 'No tests yet'"
   },
-  "keywords": [
-    "ai",
-    "agentic",
-    "multi-agent",
-    "widowblue",
-    "open-source",
-    "code-generation",
-    "visual-builder"
-  ],
-  "engines": {
-    "node": ">=18"
-  }
+  "devDependencies": {
+    "wrangler": "^4.145.0"
+  },
+  "keywords": ["ai", "agentic", "multi-agent", "widowblue", "open-source"],
+  "engines": { "node": ">=18" }
 }
