@@ -1,30 +1,23 @@
 /**
- * WidowBlue Worker – Auth API + static frontend assets
+ * WidowBlue Worker – Auth + Search + Orchestrator stub + static assets
  * Superadmin: giorgi.daniele96@gmail.com
- *
- * Bindings (wrangler.toml):
- *   AUTH_KV  – KV namespace for users + sessions
- *   PEPPER   – secret string (wrangler secret put PEPPER)
  */
 
+import { modularSearch } from './search.js';
+
 const ADMIN_EMAIL = 'giorgi.daniele96@gmail.com';
-const SESSION_TTL_SEC = 60 * 60 * 24 * 7; // 7 days
+const SESSION_TTL_SEC = 60 * 60 * 24 * 7;
 const MAX_FAIL = 8;
 const LOCK_SEC = 15 * 60;
 
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
-
     if (url.pathname.startsWith('/api/')) {
       return handleApi(request, env, url);
     }
-
-    // Static assets (Workers Assets)
-    if (env.ASSETS) {
-      return env.ASSETS.fetch(request);
-    }
-    return new Response('WidowBlue Worker up. Configure [assets] in wrangler.toml', { status: 200 });
+    if (env.ASSETS) return env.ASSETS.fetch(request);
+    return new Response('WidowBlue Worker up', { status: 200 });
   },
 };
 
@@ -36,29 +29,121 @@ async function handleApi(request, env, url) {
 
   try {
     if (url.pathname === '/api/health') {
-      return json({ ok: true, service: 'widowblue-auth', kv: !!env.AUTH_KV }, 200, cors);
+      return json(
+        {
+          ok: true,
+          service: 'widowblue',
+          kv: !!env.AUTH_KV,
+          brave: !!env.BRAVE_API_KEY,
+          endpoints: ['/api/health', '/api/auth/*', '/api/search', '/api/orchestrate'],
+        },
+        200,
+        cors
+      );
     }
 
-    if (url.pathname === '/api/auth/register' && request.method === 'POST') {
-      return register(request, env, cors);
+    // Auth
+    if (url.pathname === '/api/auth/register' && request.method === 'POST') return register(request, env, cors);
+    if (url.pathname === '/api/auth/login' && request.method === 'POST') return login(request, env, cors);
+    if (url.pathname === '/api/auth/logout' && request.method === 'POST') return logout(request, env, cors);
+    if (url.pathname === '/api/auth/me' && request.method === 'GET') return me(request, env, cors);
+    if (url.pathname === '/api/auth/timed-key' && request.method === 'POST') return timedKey(request, env, cors);
+
+    // Search modular
+    if (url.pathname === '/api/search' && request.method === 'POST') {
+      return handleSearch(request, env, cors);
     }
-    if (url.pathname === '/api/auth/login' && request.method === 'POST') {
-      return login(request, env, cors);
-    }
-    if (url.pathname === '/api/auth/logout' && request.method === 'POST') {
-      return logout(request, env, cors);
-    }
-    if (url.pathname === '/api/auth/me' && request.method === 'GET') {
-      return me(request, env, cors);
-    }
-    if (url.pathname === '/api/auth/timed-key' && request.method === 'POST') {
-      return timedKey(request, env, cors);
+
+    // Orchestrator (plan + optional search)
+    if (url.pathname === '/api/orchestrate' && request.method === 'POST') {
+      return handleOrchestrate(request, env, cors);
     }
 
     return json({ error: 'not_found' }, 404, cors);
   } catch (e) {
     return json({ error: 'server_error', message: String(e.message || e) }, 500, cors);
   }
+}
+
+async function handleSearch(request, env, cors) {
+  const body = await request.json().catch(() => ({}));
+  const query = String(body.query || body.q || '').trim();
+  const deep = !!body.deep;
+  if (!query) return json({ error: 'empty_query' }, 400, cors);
+
+  // Light rate hint via spider log
+  await logSpider(env, 'search_query', null, request);
+
+  const data = await modularSearch(query, { deep, env });
+  return json(data, 200, cors);
+}
+
+async function handleOrchestrate(request, env, cors) {
+  const body = await request.json().catch(() => ({}));
+  const prompt = String(body.prompt || body.query || '').trim();
+  const deep = !!body.deep;
+  const doSearch = body.search !== false;
+  const attachments = Array.isArray(body.attachments) ? body.attachments : [];
+
+  if (!prompt && !attachments.length) {
+    return json({ error: 'empty_prompt' }, 400, cors);
+  }
+
+  let search = null;
+  if (doSearch && prompt) {
+    search = await modularSearch(prompt, { deep, env });
+  }
+
+  const plan = buildPlan(prompt, attachments, deep, search);
+  return json({ ok: true, plan, search }, 200, cors);
+}
+
+function buildPlan(prompt, attachments, deep, search) {
+  const ql = (prompt || '').toLowerCase();
+  const stack = [];
+  if (/sito|web|landing|react|next|frontend|pagina/.test(ql)) stack.push('Next.js + Tailwind');
+  if (/api|backend|server|fastapi|node/.test(ql)) stack.push('FastAPI / Node');
+  if (/database|db|postgres|sql|supabase/.test(ql)) stack.push('PostgreSQL');
+  if (/app|mobile|flutter|android|ios/.test(ql)) stack.push('Flutter');
+  if (/login|auth|oauth|mfa/.test(ql)) stack.push('Auth JWT + MFA');
+  if (/cloudflare|deploy|aws/.test(ql)) stack.push('Cloudflare Workers');
+  if (!stack.length) stack.push('Next.js + Tailwind', 'Cloudflare Workers');
+
+  const sources =
+    search && search.results
+      ? search.results.slice(0, deep ? 12 : 5).map((r) => ({
+          title: r.title,
+          url: r.url,
+          provider: r.provider,
+          snippet: (r.snippet || '').slice(0, 200),
+        }))
+      : [];
+
+  return {
+    mode: deep ? 'deep' : 'standard',
+    prompt,
+    attachments: attachments.map((a) => (typeof a === 'string' ? a : a.name || 'file')),
+    stack,
+    steps: deep
+      ? [
+          'Coordinatore: WBS e rischi',
+          'Ricerca multi-provider tracciata',
+          'Design system',
+          'Frontend',
+          'Backend API',
+          'Database + backup 3-2-1',
+          'Sicurezza NIS2',
+          'Test',
+          'Memoria RAG',
+          'Deploy Cloudflare',
+          'Documentazione',
+        ]
+      : ['Coordinatore', 'Design', 'Frontend', 'Backend', 'Deploy'],
+    sources,
+    providersUsed: search ? search.providers : [],
+    policy: search ? search.policy : null,
+    generatedAt: Date.now(),
+  };
 }
 
 function corsHeaders(request) {
@@ -81,7 +166,7 @@ function json(data, status, cors) {
 
 function requireKv(env) {
   if (!env.AUTH_KV) {
-    const err = new Error('AUTH_KV binding missing. Create KV namespace and bind as AUTH_KV.');
+    const err = new Error('AUTH_KV binding missing');
     err.code = 'no_kv';
     throw err;
   }
@@ -97,7 +182,13 @@ function isAdmin(email) {
 
 async function pbkdf2(password, saltBytes, env) {
   const enc = new TextEncoder();
-  const material = await crypto.subtle.importKey('raw', enc.encode(password + pepper(env)), 'PBKDF2', false, ['deriveBits']);
+  const material = await crypto.subtle.importKey(
+    'raw',
+    enc.encode(password + pepper(env)),
+    'PBKDF2',
+    false,
+    ['deriveBits']
+  );
   const bits = await crypto.subtle.deriveBits(
     { name: 'PBKDF2', salt: saltBytes, iterations: 210000, hash: 'SHA-256' },
     material,
@@ -136,29 +227,17 @@ async function register(request, env, cors) {
   const body = await request.json().catch(() => ({}));
   const email = String(body.email || '').trim().toLowerCase();
   const password = String(body.password || '');
-
   if (!email.includes('@') || email.length > 254) return json({ error: 'invalid_email' }, 400, cors);
   if (password.length < 12) return json({ error: 'weak_password', message: 'min 12 characters' }, 400, cors);
-
   const userKey = 'user:' + email;
-  const existing = await env.AUTH_KV.get(userKey);
-  if (existing) return json({ error: 'email_taken' }, 409, cors);
-
+  if (await env.AUTH_KV.get(userKey)) return json({ error: 'email_taken' }, 409, cors);
   const salt = crypto.getRandomValues(new Uint8Array(16));
   const hash = await pbkdf2(password, salt, env);
   const role = isAdmin(email) ? 'superadmin' : 'user';
-
-  const record = {
-    email,
-    salt: b64(salt),
-    hash: b64(hash),
-    role,
-    created: Date.now(),
-    fails: 0,
-    lockedUntil: 0,
-  };
-  await env.AUTH_KV.put(userKey, JSON.stringify(record));
-
+  await env.AUTH_KV.put(
+    userKey,
+    JSON.stringify({ email, salt: b64(salt), hash: b64(hash), role, created: Date.now(), fails: 0, lockedUntil: 0 })
+  );
   const token = await createSession(env, email, role);
   return json({ ok: true, email, role, token }, 201, cors);
 }
@@ -168,23 +247,19 @@ async function login(request, env, cors) {
   const body = await request.json().catch(() => ({}));
   const email = String(body.email || '').trim().toLowerCase();
   const password = String(body.password || '');
-
   const userKey = 'user:' + email;
   const raw = await env.AUTH_KV.get(userKey);
   if (!raw) {
     await logSpider(env, 'login_unknown_user', email, request);
     return json({ error: 'invalid_credentials' }, 401, cors);
   }
-
   const user = JSON.parse(raw);
   if (user.lockedUntil && Date.now() < user.lockedUntil) {
     await logSpider(env, 'login_locked', email, request);
     return json({ error: 'locked', message: 'too many failures' }, 429, cors);
   }
-
   const hash = await pbkdf2(password, fromB64(user.salt), env);
-  const ok = timingSafeEqual(hash, fromB64(user.hash));
-  if (!ok) {
+  if (!timingSafeEqual(hash, fromB64(user.hash))) {
     user.fails = (user.fails || 0) + 1;
     if (user.fails >= MAX_FAIL) {
       user.lockedUntil = Date.now() + LOCK_SEC * 1000;
@@ -195,12 +270,10 @@ async function login(request, env, cors) {
     await logSpider(env, 'login_fail', email, request);
     return json({ error: 'invalid_credentials' }, 401, cors);
   }
-
   user.fails = 0;
   user.lockedUntil = 0;
   user.lastLogin = Date.now();
   await env.AUTH_KV.put(userKey, JSON.stringify(user));
-
   const role = user.role || (isAdmin(email) ? 'superadmin' : 'user');
   const token = await createSession(env, email, role);
   return json({ ok: true, email, role, token }, 200, cors);
@@ -208,8 +281,11 @@ async function login(request, env, cors) {
 
 async function createSession(env, email, role) {
   const token = randomToken(32);
-  const sess = { email, role, exp: Date.now() + SESSION_TTL_SEC * 1000 };
-  await env.AUTH_KV.put('sess:' + token, JSON.stringify(sess), { expirationTtl: SESSION_TTL_SEC });
+  await env.AUTH_KV.put(
+    'sess:' + token,
+    JSON.stringify({ email, role, exp: Date.now() + SESSION_TTL_SEC * 1000 }),
+    { expirationTtl: SESSION_TTL_SEC }
+  );
   return token;
 }
 
@@ -245,12 +321,10 @@ async function me(request, env, cors) {
 async function timedKey(request, env, cors) {
   const sess = await getSession(env, request);
   if (!sess || !isAdmin(sess.email)) return json({ error: 'forbidden' }, 403, cors);
-
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789abcdefghjkmnpqrstuvwxyz';
   const arr = crypto.getRandomValues(new Uint8Array(20));
   let key = '';
   for (let i = 0; i < 20; i++) key += chars[arr[i] % chars.length];
-
   const ttl = 60;
   await env.AUTH_KV.put('tkey:' + key, JSON.stringify({ email: sess.email, exp: Date.now() + ttl * 1000 }), {
     expirationTtl: ttl,
@@ -262,12 +336,15 @@ async function timedKey(request, env, cors) {
 async function logSpider(env, type, email, request) {
   if (!env.AUTH_KV) return;
   const id = 'spider:' + Date.now() + ':' + randomToken(4);
-  const entry = {
-    type,
-    email: email || null,
-    ip: request.headers.get('CF-Connecting-IP') || null,
-    ua: request.headers.get('User-Agent') || null,
-    at: Date.now(),
-  };
-  await env.AUTH_KV.put(id, JSON.stringify(entry), { expirationTtl: 60 * 60 * 24 * 30 });
+  await env.AUTH_KV.put(
+    id,
+    JSON.stringify({
+      type,
+      email: email || null,
+      ip: request.headers.get('CF-Connecting-IP') || null,
+      ua: request.headers.get('User-Agent') || null,
+      at: Date.now(),
+    }),
+    { expirationTtl: 60 * 60 * 24 * 30 }
+  );
 }
