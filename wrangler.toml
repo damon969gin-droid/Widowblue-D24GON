@@ -2,19 +2,17 @@ name = "widowblue-d24gon"
 main = "src/worker.js"
 compatibility_date = "2026-09-01"
 
-# Static HUD frontend
 [assets]
 directory = "./frontend"
 binding = "ASSETS"
 
-# Auth storage (create once):
+# Auth KV (obbligatorio per auth):
 #   npx wrangler kv namespace create AUTH_KV
-#   npx wrangler kv namespace create AUTH_KV --preview
-# Then paste the ids below.
 # [[kv_namespaces]]
 # binding = "AUTH_KV"
 # id = "YOUR_KV_ID"
 # preview_id = "YOUR_PREVIEW_KV_ID"
 
-# Secret (required in production):
+# Secrets:
 #   npx wrangler secret put PEPPER
+#   npx wrangler secret put BRAVE_API_KEY   # opzionale, ricerca Brave
