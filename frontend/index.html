@@ -4,7 +4,7 @@
 <title>Widow Blue</title>
 <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;600;700&display=swap" rel="stylesheet">
 <style>
-:root{--bg:#040a12;--cy:#4de1ff;--am:#ffb347;--tx:#cfeaf5;--dim:#5f8296;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+:root{--bg:#040a12;--cy:#4de1ff;--am:#ffb347;--tx:#cfeaf5;--dim:#5f8296}
 *{box-sizing:border-box}
 html,body{height:100%;margin:0;background:var(--bg);color:var(--tx);font-family:Rajdhani,system-ui,sans-serif;overflow:hidden}
 canvas{position:fixed;inset:0;width:100%;height:100%;touch-action:none;cursor:grab}
@@ -22,84 +22,97 @@ canvas{position:fixed;inset:0;width:100%;height:100%;touch-action:none;cursor:gr
 input{flex:1;min-width:0;background:rgba(77,225,255,.07);border:1px solid rgba(77,225,255,.4);border-radius:6px;color:var(--tx);font:600 17px Rajdhani,sans-serif;padding:11px 12px}
 input:focus-visible,button:focus-visible{outline:2px solid var(--am);outline-offset:2px}
 button{background:var(--cy);color:#04141c;border:0;border-radius:6px;font:700 17px Rajdhani,sans-serif;padding:0 18px;cursor:pointer}
+button.sec{background:transparent;color:var(--cy);border:1px solid rgba(77,225,255,.4)}
 button:disabled{opacity:.5}
-#img{position:fixed;left:50%;top:calc(70px + env(safe-area-inset-top,0px));transform:translateX(-50%);max-width:min(88vw,520px);display:none;background:rgba(4,10,18,.92);border:1px solid rgba(77,225,255,.4);border-radius:8px;padding:8px}#img img{display:block;max-width:100%;max-height:52vh;border-radius:4px}
+.plus{width:42px;padding:0;font-size:22px;line-height:1}
 </style>
 </head>
 <body>
-<canvas id="c"></canvas>
+<canvas id="cv"></canvas>
 <div class="top"><h1>WIDOW BLUE</h1><p>Rete di agenti al lavoro. Trascina per ruotare.</p></div>
-<div class="stat"><b id="n">0</b>attivi su 432 agenti</div>
+<div class="stat"><b id="n">0</b>attivi su <span id="t">432</span> agenti</div>
 <div class="bot">
 <div id="log"><div><i>Widow Blue</i> pronta.</div><div>Tutti gli agenti: no</div></div>
 <div class="row">
-<button id="clip" type="button" title="Allega">+</button>
+<button class="plus sec" id="clip" type="button" title="Allega">+</button>
 <input id="q" type="text" placeholder="Scrivi o parla..." autocomplete="off">
-<button id="voice" type="button">Voce</button>
+<button class="sec" id="voice" type="button">Voce</button>
 <button id="go" type="button">Invia</button>
 </div>
 </div>
 <script>
-const C=document.getElementById('c'),x=C.getContext('2d');
-let W,H,cx,cy,R,t=0,drag=0,mx=0,my=0,rx=0.35,ry=0.15,RED=0;
+const cv=document.getElementById('cv'),x=cv.getContext('2d');
+let W,H,cx,cy,R,t=0;
 const ROLES=['Coordinatore','Frontend','Backend','Design','Database','Media','Voce','Test','Memoria','Deploy','Sicurezza','Documenti'];
+const SUBS=420,RED=0;
+function fib(i,n,r){const y=1-2*(i+.5)/n,q=Math.sqrt(Math.max(0,1-y*y)),a=i*2.39996;return[Math.cos(a)*q*r,y*r,Math.sin(a)*q*r]}
 const nodes=[];
-for(let i=0;i<12;i++){
-  const a=i/12*6.283,k=i%3===0?0:1;
-  nodes.push({r:ROLES[i],a,k,s:k?2.2:4.2,act:0,kids:[]});
-}
-nodes[0].kids=[1,2,3,4,5,7,8,9];
-nodes[3].kids=[1];nodes[1].kids=[2];
-const pulses=[];
-function resize(){W=C.width=innerWidth;H=C.height=innerHeight;cx=W/2;cy=H*0.42;R=Math.min(W,H)*0.32}
+ROLES.forEach((r,i)=>{const p=fib(i,12,.5);nodes.push({r,p,k:0,s:5,act:0,kids:[]})});
+const shells=[[.2,.72],[.3,.92],[.5,1.12]],speed=[.05,-.035,.02];
+shells.forEach(([share,rad],k)=>{const c=Math.round(SUBS*share);for(let i=0;i<c;i++){
+const j=1+rad*.06*(Math.random()-.5),p=fib(i,c,rad*j);
+let best=0,bd=-9;nodes.slice(0,12).forEach((m,mi)=>{const d=m.p[0]*p[0]+m.p[1]*p[1]+m.p[2]*p[2];if(d>bd){bd=d;best=mi}});
+nodes.push({p,k:k+1,s:1.5+Math.random()*.8,act:0,par:best});nodes[best].kids.push(nodes.length-1)}});
+document.getElementById('t').textContent=nodes.length;
+let yaw=0,pit=.35,drag=false,lx=0,ly=0;
+cv.addEventListener('pointerdown',e=>{drag=true;lx=e.clientX;ly=e.clientY;cv.setPointerCapture(e.pointerId)});
+cv.addEventListener('pointermove',e=>{if(!drag)return;yaw+=(e.clientX-lx)*.005;pit+=(e.clientY-ly)*.004;lx=e.clientX;ly=e.clientY});
+cv.addEventListener('pointerup',()=>drag=false);
+function resize(){W=cv.width=innerWidth;H=cv.height=innerHeight;cx=W/2;cy=H*.42;R=Math.min(W,H)*.38}
 resize();addEventListener('resize',resize);
-C.addEventListener('pointerdown',e=>{drag=1;mx=e.clientX;my=e.clientY;C.setPointerCapture(e.pointerId)});
-C.addEventListener('pointermove',e=>{if(!drag)return;ry+=(e.clientX-mx)*0.004;rx+=(e.clientY-my)*0.004;mx=e.clientX;my=e.clientY});
-C.addEventListener('pointerup',()=>drag=0);
-function proj(a,b,c){const s=Math.sin,c0=Math.cos;
-  let x=a*c0(ry)-c*s(ry),z=a*s(ry)+c*c0(ry);
-  let y=b*c0(rx)-z*s(rx);z=b*s(rx)+z*c0(rx);
-  const sc=1/(1+z*0.0015);return [cx+x*sc,cy+y*sc,z,sc]}
-function draw(){t+=0.008;x.clearRect(0,0,W,H);
-  const P=nodes.map((n,i)=>{const a=n.a+t*0.15,rr=R*(0.55+n.k*0.35);
-    return proj(Math.cos(a)*rr,Math.sin(a)*rr*0.55,Math.sin(a*2)*rr*0.12)});
-  // lines
-  x.globalAlpha=0.25;x.strokeStyle='#4de1ff';x.lineWidth=0.8;
-  for(let i=0;i<12;i++)for(let j=i+1;j<12;j++){
-    if(Math.random()>0.92)continue;
-    x.beginPath();x.moveTo(P[i][0],P[i][1]);x.lineTo(P[j][0],P[j][1]);x.stroke();
-  }
-  // star edges
-  x.globalAlpha=0.55;x.strokeStyle='rgba(232,251,255,.8)';x.lineWidth=1.3;
-  const star=[0,3,6,9,1,4,7,10,2,5,8,11,0];
-  x.beginPath();star.forEach((i,k)=>{const q=P[i];k?x.lineTo(q[0],q[1]):x.moveTo(q[0],q[1])});x.stroke();
-  // center glow
-  const pu=1+Math.sin(t*2)*.1,gr=x.createRadialGradient(cx,cy,0,cx,cy,R*.14*pu);
-  gr.addColorStop(0,'rgba(232,251,255,1)');gr.addColorStop(.4,'rgba(77,225,255,.7)');gr.addColorStop(1,'rgba(77,225,255,0)');
-  x.fillStyle=gr;x.beginPath();x.arc(cx,cy,R*.14*pu,0,6.283);x.fill();
-  // pulses
-  for(let i=pulses.length-1;i>=0;i--){const p=pulses[i];p.t+=.025;if(p.t>1){pulses.splice(i,1);continue}
-    const a=p.from>=0?P[p.from]:[cx,cy],b=P[p.to];
-    x.fillStyle='#ffb347';x.beginPath();x.arc(a[0]+(b[0]-a[0])*p.t,a[1]+(b[1]-a[1])*p.t,2.4,0,6.283);x.fill()}
-  // nodes
-  const ord=P.map((q,i)=>i).sort((a,b)=>P[b][2]-P[a][2]);let act=0;
-  ord.forEach(i=>{const n=nodes[i],q=P[i];n.act*=.988;const g=n.act>.05;if(g)act++;
-    const depth=Math.max(.25,Math.min(1,.65-q[2]*.5));
-    x.globalAlpha=g?1:depth*(n.k?.75:1);x.fillStyle=g?'#ffb347':'#4de1ff';
-    x.beginPath();x.arc(q[0],q[1],(n.s+(g?n.act*2.5:0))*q[3],0,6.283);x.fill();
-    if(n.k===0&&W>500&&q[2]<.4){x.globalAlpha=depth;x.fillStyle=g?'#ffb347':'#8fb5c7';x.font='600 12px Rajdhani,sans-serif';x.textAlign='center';x.fillText(n.r,q[0],q[1]-11)}});
-  x.globalAlpha=1;document.getElementById('n').textContent=act;requestAnimationFrame(draw)}
+function rot(p){let[x0,y0,z0]=p;let c=Math.cos(yaw),s=Math.sin(yaw);let x1=x0*c-z0*s,z1=x0*s+z0*c;c=Math.cos(pit);s=Math.sin(pit);let y1=y0*c-z1*s,z2=y0*s+z1*c;const sc=1/(1.2+z2*.55);return[cx+x1*R*sc,cy+y1*R*sc,z2,sc]}
+const pulses=[];
+function draw(){t+=.016;x.clearRect(0,0,W,H);
+// slow shell rotation in data
+shells.forEach((_,k)=>{const sp=speed[k];nodes.forEach(n=>{if(n.k===k+1){const a=sp*.016;const c=Math.cos(a),s=Math.sin(a);const[px,py,pz]=n.p;n.p=[px*c-pz*s,py,px*s+pz*c]}})});
+const P=nodes.map(n=>rot(n.p));
+// soft links from center
+x.globalAlpha=.12;x.strokeStyle='#4de1ff';x.lineWidth=.6;
+for(let i=0;i<12;i++){const a=P[i];x.beginPath();x.moveTo(cx,cy);x.lineTo(a[0],a[1]);x.stroke()}
+// star wireframe among role nodes
+x.globalAlpha=.5;x.strokeStyle='rgba(232,251,255,.85)';x.lineWidth=1.2;
+const star=[0,4,8,1,5,9,2,6,10,3,7,11,0];
+x.beginPath();star.forEach((i,k)=>{const q=P[i];k?x.lineTo(q[0],q[1]):x.moveTo(q[0],q[1])});x.stroke();
+// center glow
+const pu=1+Math.sin(t*2)*.08;const gr=x.createRadialGradient(cx,cy,0,cx,cy,R*.16*pu);
+gr.addColorStop(0,'rgba(232,251,255,1)');gr.addColorStop(.35,'rgba(77,225,255,.65)');gr.addColorStop(1,'rgba(77,225,255,0)');
+x.globalAlpha=1;x.fillStyle=gr;x.beginPath();x.arc(cx,cy,R*.16*pu,0,6.283);x.fill();
+// pulses
+for(let i=pulses.length-1;i>=0;i--){const p=pulses[i];p.t+=.03;if(p.t>1){pulses.splice(i,1);continue}
+const a=p.from>=0?P[p.from]:[cx,cy],b=P[p.to];
+x.fillStyle='#ffb347';x.beginPath();x.arc(a[0]+(b[0]-a[0])*p.t,a[1]+(b[1]-a[1])*p.t,2.6,0,6.283);x.fill()}
+// nodes depth-sorted
+const ord=P.map((q,i)=>i).sort((a,b)=>P[b][2]-P[a][2]);let act=0;
+ord.forEach(i=>{const n=nodes[i],q=P[i];n.act*=.985;const g=n.act>.05;if(g)act++;
+const depth=Math.max(.2,Math.min(1,.7-q[2]*.45));
+x.globalAlpha=g?1:depth*(n.k?0.7:1);
+x.fillStyle=g?'#ffb347':'#4de1ff';
+x.beginPath();x.arc(q[0],q[1],(n.s+(g?n.act*2.2:0))*q[3],0,6.283);x.fill();
+if(n.k===0&&W>480&&q[2]<.35){x.globalAlpha=depth;x.fillStyle=g?'#ffb347':'#8fb5c7';x.font='600 12px Rajdhani,sans-serif';x.textAlign='center';x.fillText(n.r,q[0],q[1]-12)}});
+x.globalAlpha=1;document.getElementById('n').textContent=act;requestAnimationFrame(draw)}
 requestAnimationFrame(draw);
 const log=document.getElementById('log');
 function say(role,txt){const d=document.createElement('div');d.innerHTML='<i>'+role+'</i> '+txt;log.appendChild(d);while(log.children.length>4)log.removeChild(log.firstChild)}
-function fire(i){const n=nodes[i];n.act=1;pulses.push({from:-1,to:i,t:0});
-n.kids.forEach((k,j)=>setTimeout(()=>{nodes[k].act=1;pulses.push({from:i,to:k,t:0})},j*25))}
+function fire(i){if(i<0||i>=nodes.length)return;const n=nodes[i];n.act=1;pulses.push({from:-1,to:i,t:0});
+(n.kids||[]).forEach((k,j)=>setTimeout(()=>{if(nodes[k]){nodes[k].act=1;pulses.push({from:i,to:k,t:0})}},j*18))}
 const steps=[[0,'Analizzo la richiesta','Coordinatore'],[3,'Palette e layout definiti','Design'],[1,'Genero i componenti Next.js e Tailwind','Frontend'],[2,'Creo API e autenticazione','Backend'],[4,'Configuro il database gratuito','Database'],[5,'Preparo immagini e splash','Media'],[7,'Eseguo i test','Test'],[8,'Salvo tutto in memoria','Memoria'],[9,'Pubblico','Deploy']];
 let running=false;
-function run(){if(running)return;const q=document.getElementById('q').value.trim();if(!q)return;
-  running=true;document.getElementById('go').disabled=true;say('Coordinatore','sto elaborando...');
-  fire(0);let i=0;const iv=setInterval(()=>{if(i<steps.length){const[s,m,r]=steps[i++];fire(s);say(r,m)}else{clearInterval(iv);running=false;document.getElementById('go').disabled=false;say('Widow Blue','completato')}},900);
-  document.getElementById('q').value=''}
+function run(){
+  if(running)return;
+  const q=document.getElementById('q').value.trim();
+  if(!q)return;
+  running=true;
+  const go=document.getElementById('go');
+  if(go)go.disabled=true;
+  say('Coordinatore','sto elaborando...');
+  fire(0);
+  let i=0;
+  const iv=setInterval(()=>{
+    if(i<steps.length){const[s,m,r]=steps[i++];fire(s);say(r,m);}
+    else{clearInterval(iv);running=false;if(go)go.disabled=false;say('Widow Blue','completato');}
+  },850);
+  document.getElementById('q').value='';
+}
 document.getElementById('go').onclick=run;
 document.getElementById('q').addEventListener('keydown',e=>{if(e.key==='Enter')run()});
 </script>
