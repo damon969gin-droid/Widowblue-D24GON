@@ -13,8 +13,73 @@ function currentLang(){const v=langSel.value;return v==='auto'?(navigator.langua
 if(SR){rec=new SR();rec.interimResults=true;rec.continuous=false;rec.onresult=e=>{let final='';for(let i=e.resultIndex;i<e.results.length;i++){const t=e.results[i][0].transcript;if(e.results[i].isFinal)final+=t;else document.getElementById('q').placeholder=t}if(final){const q=document.getElementById('q');q.value=(q.value+' '+final).trim();q.placeholder='Scrivi, parla o allega...'}};rec.onend=()=>{listening=false;voiceBtn.classList.remove('rec');voiceBtn.textContent='Voce'};rec.onerror=()=>{listening=false;voiceBtn.classList.remove('rec');voiceBtn.textContent='Voce';say('Voce','microfono non disponibile')}}
 voiceBtn.onclick=()=>{if(!rec){say('Voce','Usa Chrome/Edge per la voce');return}if(listening){rec.stop();return}rec.lang=currentLang();listening=true;voiceBtn.classList.add('rec');voiceBtn.textContent='Ascolto\u2026';try{rec.start()}catch(e){listening=false;voiceBtn.classList.remove('rec');voiceBtn.textContent='Voce'}};
 document.getElementById('allAgents').onclick=function(){allMode=!allMode;this.textContent='Tutti gli agenti: '+(allMode?'s\u00ec':'no');this.classList.toggle('on',allMode);if(allMode){for(let i=0;i<nodes.length;i++)nodes[i].act=Math.max(nodes[i].act,.45);say('Rete','TUTTI GLI AGENTI ON \u00b7 '+nodes.length+' nodi \u00b7 ogni Invia = ricerca approfondita')}else say('Rete','modalit\u00e0 standard (core agents)')};
+
+/** Costruisce una risposta leggibile dalle fonti modular search */
+function formatSearchAnswer(prompt,nAgents,deep,plan,search){
+  const lines=[];
+  lines.push(deep?'══ WIDOWBLUE · RISPOSTA DEEP ══':'══ WIDOWBLUE · RISPOSTA ══');
+  lines.push('Richiesta: '+prompt);
+  lines.push('Agenti: '+nAgents+(deep?' · tutti attivi':''));
+  lines.push('');
+
+  const results=(search&&search.results)||[];
+  const providers=(search&&search.providers)||[];
+
+  // Sintesi dalle snippet (priorità: perplexity, wikipedia, duckduckgo, altri)
+  const order=['perplexity','wikipedia','duckduckgo','google','bing','brave'];
+  const sorted=results.slice().sort((a,b)=>{
+    const ia=order.indexOf(a.provider);const ib=order.indexOf(b.provider);
+    return (ia<0?99:ia)-(ib<0?99:ib);
+  });
+
+  if(sorted.length){
+    lines.push('— RISPOSTA (dalle fonti) —');
+    const seen=new Set();
+    let n=0;
+    for(const r of sorted){
+      const sn=(r.snippet||'').trim();
+      if(!sn||sn.length<20)continue;
+      const key=sn.slice(0,60).toLowerCase();
+      if(seen.has(key))continue;
+      seen.add(key);
+      lines.push((++n)+'. ['+r.provider+'] '+sn.slice(0,320));
+      if(n>=(deep?8:5))break;
+    }
+    if(!n)lines.push('(nessuno snippet utile — vedi fonti sotto)');
+    lines.push('');
+    lines.push('— FONTI TRACCIATE —');
+    sorted.slice(0,deep?15:8).forEach((r,i)=>{
+      lines.push((i+1)+'. ['+r.provider+'] '+(r.title||'senza titolo'));
+      if(r.url)lines.push('   '+r.url);
+    });
+  }else{
+    lines.push('— RISPOSTA —');
+    lines.push('Ricerca live non ha restituito risultati (provider offline o senza chiavi API).');
+    lines.push('Attivi sempre: Wikipedia + DuckDuckGo. Aggiungi Google/Bing/Brave/Perplexity dai secret Cloudflare.');
+  }
+
+  if(providers.length){
+    lines.push('');
+    lines.push('— PROVIDER —');
+    providers.forEach(pr=>{
+      lines.push('· '+pr.name+': '+(pr.ok?('ok · '+pr.count+' risultati · '+pr.ms+'ms'):('errore · '+(pr.error||''))));
+    });
+  }
+
+  if(plan&&plan.stack&&plan.stack.length){
+    lines.push('');
+    lines.push('— PIANO PROGETTO (se applicabile) —');
+    lines.push('Stack: '+plan.stack.join(' · '));
+    if(plan.steps)plan.steps.forEach((s,i)=>lines.push((i+1)+'. '+s));
+  }
+
+  lines.push('');
+  lines.push('— WidowBlue · ricerca modulare multi-provider');
+  return lines.join('\n');
+}
+
 function analyze(q,atts,deep){
-  const ql=q.toLowerCase();const links=q.match(/https?:\/\/[^\s]+/g)||[];const words=q.split(/\s+/).filter(Boolean).length;
+  const ql=q.toLowerCase();const links=q.match(/https?:\/\/[^\s]+/g)||[];
   const wants={web:/sito|web|landing|html|next|react|frontend|pagina|website|ui|ux/.test(ql),api:/api|backend|server|endpoint|fastapi|node|express|graphql/.test(ql),db:/database|db|postgres|sql|supabase|neon|mongo|redis/.test(ql),mobile:/app|mobile|flutter|android|ios|swift|kotlin/.test(ql),auth:/login|auth|autenticazione|oauth|utente|registrazione|mfa|password/.test(ql),media:/immagine|video|logo|splash|avatar|image|audio/.test(ql),research:/cerca|ricerca|search|analizza|page|confronta|mercato|competitor/.test(ql)||links.length>0,security:/sicurezza|security|nis2|encrypt|firewall|waf/.test(ql),cloud:/cloudflare|aws|deploy|vercel|docker|k8s|hosting/.test(ql)};
   const stack=[];if(wants.web)stack.push('Next.js + Tailwind + React');if(wants.api)stack.push('FastAPI / Node (API REST)');if(wants.db)stack.push('PostgreSQL + Redis');if(wants.mobile)stack.push('Flutter (iOS/Android)');if(wants.auth)stack.push('Auth JWT + MFA TOTP');if(wants.security)stack.push('WAF Cloudflare + Zero Trust');if(wants.cloud)stack.push('Cloudflare Workers/Pages + R2');if(wants.research)stack.push('Ricerca multi-provider tracciata');if(wants.media)stack.push('Pipeline media');if(!stack.length)stack.push('Next.js + Tailwind','Cloudflare Workers','Auth modulare');
   const nAgents=nodes.length;let attNote='';
@@ -28,7 +93,8 @@ const stepsDeep=[[0,'Deep sweep rete','Coordinatore'],[0,'Ricerca multi-fonte','
 function showPanel(title,body){lastResult=body;document.getElementById('ptitle').textContent=title;document.getElementById('pbody').textContent=body;document.getElementById('panel').style.display='block';document.getElementById('overlay').style.display='block'}
 document.getElementById('pclose').onclick=document.getElementById('overlay').onclick=()=>{document.getElementById('panel').style.display='none';document.getElementById('overlay').style.display='none'};
 document.getElementById('pcopy').onclick=async()=>{try{await navigator.clipboard.writeText(lastResult);say('Widow Blue','copiato')}catch(e){}};
-document.getElementById('pdl').onclick=()=>{const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([lastResult],{type:'text/plain'}));a.download='widowblue-piano.txt';a.click()};
+document.getElementById('pdl').onclick=()=>{const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([lastResult],{type:'text/plain'}));a.download='widowblue-risposta.txt';a.click()};
+
 function run(){
   if(running)return;
   const q=document.getElementById('q').value.trim();
@@ -40,7 +106,7 @@ function run(){
   logEl.appendChild(userDiv);logEl.scrollTop=1e9;
   const nAgents=nodes.length;
   if(allMode){say('Coordinatore','TUTTI GLI AGENTI \u2014 '+nAgents+' agenti, ricerca approfondita\u2026');fireAll()}
-  else{say('Coordinatore','elaborazione standard\u2026');fire(0)}
+  else{say('Coordinatore','elaborazione + ricerca modulare\u2026');fire(0)}
   const steps=allMode?stepsDeep:stepsStd;const delay=allMode?420:650;let i=0;
   const iv=setInterval(()=>{
     if(i<steps.length){
@@ -55,26 +121,38 @@ function run(){
           try{
             say('Ricerca','multi-provider'+(allMode?' deep':'')+'\u2026');
             const r=await wbApi.orchestrate(prompt,{deep:allMode,search:true,attachments:atts.map(a=>a.name)});
-            if(r.ok&&r.data&&r.data.plan){
-              const p=r.data.plan,s=r.data.search;
-              let body=(allMode?'DEEP + LIVE SEARCH':'PIANO + LIVE SEARCH')+'\nAgenti: '+nAgents+'\n\nRICHIESTA\n'+prompt+'\n\nSTACK\n- '+(p.stack||[]).join('\n- ')+'\n\nSTEPS\n'+(p.steps||[]).map((x,i)=>(i+1)+'. '+x).join('\n');
-              if(s&&s.results&&s.results.length){
-                body+='\n\nFONTI WEB\n'+s.results.slice(0,allMode?12:6).map(x=>'- ['+x.provider+'] '+x.title+'\n  '+x.url).join('\n');
-                body+='\n\nProvider: '+(s.providers||[]).map(pr=>pr.name+(pr.ok?' ok':' fail')).join(', ');
-              }
-              body+='\n\n\u2014 WidowBlue backend';
-              showPanel(allMode?'Deep + ricerca live':'Piano + ricerca live',body);
+            if(r.ok&&r.data){
+              const body=formatSearchAnswer(prompt,nAgents,allMode,r.data.plan,r.data.search);
+              const nRes=(r.data.search&&r.data.search.results&&r.data.search.results.length)||0;
+              showPanel(nRes?'Risposta · '+nRes+' fonti':'Risposta ricerca',body);
               if(window.wbSaveConversation)wbSaveConversation(prompt,body);
-              say('Widow Blue',allMode?('deep+search \u00b7 '+nAgents+' agenti'):'piano+search pronto');
+              say('Widow Blue',nRes?('risposta pronta · '+nRes+' fonti'):'ricerca completata (poche fonti)');
               usedApi=true;
+            }else if(r.data&&r.data.error){
+              say('Ricerca','errore API: '+(r.data.message||r.data.error));
             }
-          }catch(e){say('Ricerca','fallback locale');}
+          }catch(e){say('Ricerca','fallback locale · '+String(e.message||e));}
+        }
+        if(!usedApi){
+          // Prova search diretto, poi fallback analyze
+          try{
+            if(window.wbApi&&wbApi.search){
+              const sr=await wbApi.search(prompt,allMode);
+              if(sr.ok&&sr.data&&sr.data.results){
+                const body=formatSearchAnswer(prompt,nAgents,allMode,null,sr.data);
+                showPanel('Risposta ricerca',body);
+                if(window.wbSaveConversation)wbSaveConversation(prompt,body);
+                say('Widow Blue','risposta da /api/search');
+                usedApi=true;
+              }
+            }
+          }catch(e2){}
         }
         if(!usedApi){
           const res=analyze(prompt,atts,allMode);
           showPanel(res.title,res.body);
           if(window.wbSaveConversation)wbSaveConversation(prompt,res.body);
-          say('Widow Blue',allMode?('analisi deep \u00b7 '+nAgents+' agenti'):'piano pronto');
+          say('Widow Blue','piano locale (API non raggiungibile)');
         }
         running=false;if(go)go.disabled=false;files.length=0;renderChips();
       })();
