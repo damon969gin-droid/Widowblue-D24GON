@@ -1,5 +1,5 @@
 /**
- * WidowBlue Worker – Auth + Search + Orchestrator stub + static assets
+ * WidowBlue Worker – Auth + Search + Orchestrator + static assets
  * Superadmin: giorgi.daniele96@gmail.com
  */
 
@@ -35,6 +35,7 @@ async function handleApi(request, env, url) {
           service: 'widowblue',
           kv: !!env.AUTH_KV,
           brave: !!env.BRAVE_API_KEY,
+          google: !!(env.GOOGLE_API_KEY && env.GOOGLE_CSE_ID),
           endpoints: ['/api/health', '/api/auth/*', '/api/search', '/api/orchestrate'],
         },
         200,
@@ -42,19 +43,16 @@ async function handleApi(request, env, url) {
       );
     }
 
-    // Auth
     if (url.pathname === '/api/auth/register' && request.method === 'POST') return register(request, env, cors);
     if (url.pathname === '/api/auth/login' && request.method === 'POST') return login(request, env, cors);
     if (url.pathname === '/api/auth/logout' && request.method === 'POST') return logout(request, env, cors);
     if (url.pathname === '/api/auth/me' && request.method === 'GET') return me(request, env, cors);
     if (url.pathname === '/api/auth/timed-key' && request.method === 'POST') return timedKey(request, env, cors);
 
-    // Search modular
     if (url.pathname === '/api/search' && request.method === 'POST') {
       return handleSearch(request, env, cors);
     }
 
-    // Orchestrator (plan + optional search)
     if (url.pathname === '/api/orchestrate' && request.method === 'POST') {
       return handleOrchestrate(request, env, cors);
     }
@@ -70,10 +68,7 @@ async function handleSearch(request, env, cors) {
   const query = String(body.query || body.q || '').trim();
   const deep = !!body.deep;
   if (!query) return json({ error: 'empty_query' }, 400, cors);
-
-  // Light rate hint via spider log
   await logSpider(env, 'search_query', null, request);
-
   const data = await modularSearch(query, { deep, env });
   return json(data, 200, cors);
 }
@@ -84,16 +79,9 @@ async function handleOrchestrate(request, env, cors) {
   const deep = !!body.deep;
   const doSearch = body.search !== false;
   const attachments = Array.isArray(body.attachments) ? body.attachments : [];
-
-  if (!prompt && !attachments.length) {
-    return json({ error: 'empty_prompt' }, 400, cors);
-  }
-
+  if (!prompt && !attachments.length) return json({ error: 'empty_prompt' }, 400, cors);
   let search = null;
-  if (doSearch && prompt) {
-    search = await modularSearch(prompt, { deep, env });
-  }
-
+  if (doSearch && prompt) search = await modularSearch(prompt, { deep, env });
   const plan = buildPlan(prompt, attachments, deep, search);
   return json({ ok: true, plan, search }, 200, cors);
 }
@@ -108,7 +96,6 @@ function buildPlan(prompt, attachments, deep, search) {
   if (/login|auth|oauth|mfa/.test(ql)) stack.push('Auth JWT + MFA');
   if (/cloudflare|deploy|aws/.test(ql)) stack.push('Cloudflare Workers');
   if (!stack.length) stack.push('Next.js + Tailwind', 'Cloudflare Workers');
-
   const sources =
     search && search.results
       ? search.results.slice(0, deep ? 12 : 5).map((r) => ({
@@ -118,7 +105,6 @@ function buildPlan(prompt, attachments, deep, search) {
           snippet: (r.snippet || '').slice(0, 200),
         }))
       : [];
-
   return {
     mode: deep ? 'deep' : 'standard',
     prompt,
@@ -127,7 +113,7 @@ function buildPlan(prompt, attachments, deep, search) {
     steps: deep
       ? [
           'Coordinatore: WBS e rischi',
-          'Ricerca multi-provider tracciata',
+          'Ricerca multi-provider (Wikipedia, DDG, Brave, Google)',
           'Design system',
           'Frontend',
           'Backend API',
