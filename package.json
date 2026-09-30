@@ -12,7 +12,7 @@
   "scripts": {
     "dev:frontend": "npx serve frontend -p 8080",
     "dev": "npm run dev:frontend",
-    "build": "echo 'Frontend is static – ready for Cloudflare Pages'",
+    "build": "echo 'Static frontend – Cloudflare Pages will publish the frontend/ folder'",
     "test": "echo 'No tests yet – coming in MVP'"
   },
   "keywords": [
