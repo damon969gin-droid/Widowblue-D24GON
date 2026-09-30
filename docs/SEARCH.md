@@ -2,49 +2,57 @@
 
 ## Principi
 
-- **Multi-provider** in parallelo (Wikipedia, DuckDuckGo, Brave, Google)
-- **Tracciabile**: `provider`, `url`, `snippet`, `fetchedAt`
-- **Rispettosa**: API ufficiali, timeout 8s, **nessuno scraping Google**, no bypass paywall
+- Multi-provider in parallelo
+- Tracciabile (`provider`, `url`, `snippet`)
+- Solo API ufficiali (niente scraping SERP)
 
 ## Providers
 
-| Nome | Chiavi | Note |
+| Nome | Secret | Note |
 |------|--------|------|
 | wikipedia | — | sempre |
-| duckduckgo | — | Instant Answer |
+| duckduckgo | — | sempre |
 | brave | `BRAVE_API_KEY` | opzionale |
-| **google** | `GOOGLE_API_KEY` + `GOOGLE_CSE_ID` | Custom Search ufficiale |
+| google | `GOOGLE_API_KEY` + `GOOGLE_CSE_ID` | Custom Search |
+| **bing** | `BING_API_KEY` | Azure Bing Web Search v7 |
+| **perplexity** | `PERPLEXITY_API_KEY` | Sonar + citazioni |
 
-## Setup Google
+## Secret su Cloudflare **Pages**
 
-1. [Google Cloud](https://console.cloud.google.com/) → abilita **Custom Search API** → crea API key  
-2. [Programmable Search Engine](https://programmablesearchengine.google.com/) → crea motore → copia **Search engine ID** (`cx`)  
-3. Cloudflare:
+Il progetto è collegato come **Pages**. Non usare `wrangler secret put` (è per Workers puri).
+
+### Opzione A – CLI (Codespace)
+
+Sostituisci `NOME_PROGETTO` con il nome Pages su Cloudflare (es. `widowblue-d24gon`):
 
 ```bash
-npx wrangler secret put GOOGLE_API_KEY
-npx wrangler secret put GOOGLE_CSE_ID
-# opzionale
-npx wrangler secret put BRAVE_API_KEY
+npx wrangler pages secret put GOOGLE_API_KEY --project-name=NOME_PROGETTO
+npx wrangler pages secret put GOOGLE_CSE_ID --project-name=NOME_PROGETTO
+npx wrangler pages secret put BING_API_KEY --project-name=NOME_PROGETTO
+npx wrangler pages secret put PERPLEXITY_API_KEY --project-name=NOME_PROGETTO
+npx wrangler pages secret put BRAVE_API_KEY --project-name=NOME_PROGETTO
+npx wrangler pages secret put PEPPER --project-name=NOME_PROGETTO
 ```
 
-Quota free tipica Google: ~100 query/giorno (controlla la console).
+### Opzione B – Dashboard (più semplice)
 
-## API
+1. Cloudflare Dashboard → **Workers & Pages** → il tuo progetto  
+2. **Settings** → **Environment variables** (o **Secrets**)  
+3. Aggiungi i secret sopra per **Production**  
+4. **Retry deployment**
 
-```json
-POST /api/search
-{ "query": "fastapi vs express", "deep": true }
-```
+## Dove prendere le chiavi
 
-```json
-POST /api/orchestrate
-{ "prompt": "crea un SaaS", "deep": true, "search": true }
-```
+- **Google**: Cloud Console + [Programmable Search](https://programmablesearchengine.google.com/) (`cx`)
+- **Bing**: Azure Portal → risorsa **Bing Search v7** → Keys
+- **Perplexity**: [perplexity.ai/settings/api](https://www.perplexity.ai/settings/api)
+- **Brave**: [brave.com/search/api](https://brave.com/search/api/)
 
-## Frontend
+## Verifica
 
-```js
-await wbApi.search('cloudflare workers', true);
-await wbApi.orchestrate(prompt, { deep: true });
+Dopo redeploy:
+
+```text
+GET /api/health
+→ { "google": true, "bing": true, "perplexity": true, ... }
 ```
