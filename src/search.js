@@ -4,10 +4,11 @@
  *
  * Providers:
  *  - wikipedia (sempre, free)
- *  - duckduckgo (HTML lite / related topics, free)
+ *  - duckduckgo (Instant Answer, free)
  *  - brave (se env.BRAVE_API_KEY)
+ *  - google (se env.GOOGLE_API_KEY + env.GOOGLE_CSE_ID)
  *
- * Ogni risultato include: provider, title, url, snippet, fetchedAt
+ * Ogni risultato: provider, title, url, snippet, fetchedAt
  */
 
 const UA = 'WidowBlueBot/0.2 (+https://github.com/damon969gin-droid/Widowblue-D24GON; research; respectful)';
@@ -27,8 +28,18 @@ export async function modularSearch(query, opts = {}) {
     runProvider('wikipedia', () => searchWikipedia(q)),
     runProvider('duckduckgo', () => searchDuckDuckGo(q)),
   ];
+
   if (env.BRAVE_API_KEY) {
     jobs.push(runProvider('brave', () => searchBrave(q, env.BRAVE_API_KEY, deep ? 10 : 5)));
+  }
+
+  // Google Programmable Search (Custom Search JSON API)
+  if (env.GOOGLE_API_KEY && env.GOOGLE_CSE_ID) {
+    jobs.push(
+      runProvider('google', () =>
+        searchGoogle(q, env.GOOGLE_API_KEY, env.GOOGLE_CSE_ID, deep ? 10 : 5)
+      )
+    );
   }
 
   const settled = await Promise.all(jobs);
@@ -38,7 +49,6 @@ export async function modularSearch(query, opts = {}) {
     else errors.push({ provider: s.name, error: s.error });
   }
 
-  // Dedup by URL
   const seen = new Set();
   const unique = [];
   for (const r of results) {
@@ -54,12 +64,13 @@ export async function modularSearch(query, opts = {}) {
     deep,
     providers,
     errors,
-    results: unique.slice(0, deep ? 24 : 12),
+    results: unique.slice(0, deep ? 30 : 12),
     policy: {
       respectful: true,
       notes: [
         'Rispetta robots.txt e ToS di ogni fonte',
-        'Rate limit client-side consigliato',
+        'Google: solo Custom Search API ufficiale (no scraping)',
+        'Rate limit e quote Google CSE a carico del progetto',
         'Nessun bypass paywall/CAPTCHA',
         'Tracciabilità: ogni item ha provider + url',
       ],
@@ -92,7 +103,6 @@ async function searchWikipedia(q) {
   const res = await fetch(url, { headers: { 'User-Agent': UA, Accept: 'application/json' } });
   if (!res.ok) throw new Error('wikipedia HTTP ' + res.status);
   const data = await res.json();
-  // [query, titles[], descriptions[], urls[]]
   const titles = data[1] || [];
   const descs = data[2] || [];
   const urls = data[3] || [];
@@ -106,7 +116,6 @@ async function searchWikipedia(q) {
 }
 
 async function searchDuckDuckGo(q) {
-  // Instant Answer API (no key) – limited but free and respectful
   const url = 'https://api.duckduckgo.com/?format=json&no_html=1&skip_disambig=1&q=' + encodeURIComponent(q);
   const res = await fetch(url, { headers: { 'User-Agent': UA, Accept: 'application/json' } });
   if (!res.ok) throw new Error('duckduckgo HTTP ' + res.status);
@@ -170,6 +179,42 @@ async function searchBrave(q, apiKey, count = 5) {
     title: r.title || '',
     url: r.url || '',
     snippet: r.description || '',
+    fetchedAt: Date.now(),
+  }));
+}
+
+/**
+ * Google Programmable Search Engine (Custom Search JSON API)
+ * Docs: https://developers.google.com/custom-search/v1/overview
+ * Requires:
+ *   GOOGLE_API_KEY  – API key from Google Cloud
+ *   GOOGLE_CSE_ID   – Search Engine ID (cx) from Programmabile Search
+ */
+async function searchGoogle(q, apiKey, cx, num = 5) {
+  const n = Math.min(Math.max(1, num), 10); // API max 10 per request
+  const url =
+    'https://www.googleapis.com/customsearch/v1?key=' +
+    encodeURIComponent(apiKey) +
+    '&cx=' +
+    encodeURIComponent(cx) +
+    '&q=' +
+    encodeURIComponent(q) +
+    '&num=' +
+    n;
+  const res = await fetch(url, {
+    headers: { Accept: 'application/json', 'User-Agent': UA },
+  });
+  if (!res.ok) {
+    const errBody = await res.text().catch(() => '');
+    throw new Error('google HTTP ' + res.status + (errBody ? ': ' + errBody.slice(0, 120) : ''));
+  }
+  const data = await res.json();
+  const items = data.items || [];
+  return items.map((item) => ({
+    provider: 'google',
+    title: item.title || '',
+    url: item.link || '',
+    snippet: item.snippet || '',
     fetchedAt: Date.now(),
   }));
 }
