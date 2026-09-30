@@ -1,77 +1,58 @@
-# WidowBlue
+# WidowBlue (D24GON)
 
-**Repository:** [https://github.com/damon969gin-droid/Widowblue-D24GON](https://github.com/damon969gin-droid/Widowblue-D24GON)
+Piattaforma AI agentica open source – HUD neurale, multi-agente, auth Worker, Cloudflare.
 
-**WidowBlue** is an open-source AI Agentic Platform, AI Operating System and intelligent development environment.  
-Describe an idea (text, voice, images, files, links, GitHub repos…) and WidowBlue plans, codes, tests, documents and deploys the complete project.
+**Repo:** https://github.com/damon969gin-droid/Widowblue-D24GON  
+**Live:** https://widowblue-d24gon.damon969gin.workers.dev  
+**Superadmin:** giorgi.daniele96@gmail.com
 
-> Core is open source, modular, extensible via plugins, with sandbox execution and permission system.  
-> Models can run locally or via any compatible provider.  
-> Web research is modular, multi-provider, trackable and respectful of licenses / robots.txt / rate limits.
+## Struttura su `main`
 
-**Owner / Contact:** damon969gin@gmail.com
-
-## Vision
-
-WidowBlue is **not** a chatbot.  
-It is a multi-agent system that autonomously:
-
-- Analyses the idea
-- Chooses architecture & languages
-- Writes code, fixes bugs, tests, refactors
-- Creates frontend, backend, mobile, database, API, auth
-- Deploys
-- Generates media, documents, presentations
-
-Visual builder (Figma/Framer style) + neural agent network UI (the exact cyberpunk HUD you see in `frontend/`).
-
-## Current Status (MVP foundation)
-
-- Exact visual UI (neural network canvas, cyan/amber, Rajdhani, agent nodes)
-- Project structure ready for multi-agent orchestrator
-- Open source (MIT)
-- Ready for GitHub + free Cloudflare Pages / Workers
-
-## Quick Start (local)
-
-```bash
-# Serve the frontend shell
-cd frontend
-python3 -m http.server 8080
-# or
-npx serve .
+```
+frontend/index.html      HUD + chat + voce + allegati
+frontend/wb-auth.js      Menu ⋮ cronologia, login, dashboard
+src/worker.js            API auth + static assets
+docs/ARCHITECTURE.md
+docs/ROADMAP.md
+docs/SECURITY.md         NIS2, MFA, spider, 3-2-1
+docs/AUTH_SETUP.md       KV + PEPPER + deploy
+wrangler.toml
+package.json
+LICENSE
 ```
 
-Open http://localhost:8080
+## Auth API
 
-## Stack (planned / initial)
+| Endpoint | Descrizione |
+|----------|-------------|
+| `POST /api/auth/register` | `{ email, password }` |
+| `POST /api/auth/login` | `{ email, password }` → token |
+| `GET /api/auth/me` | Bearer token |
+| `POST /api/auth/logout` | Bearer token |
+| `POST /api/auth/timed-key` | Solo superadmin |
+| `GET /api/health` | Health check |
 
-| Layer          | Choice                          |
-|----------------|---------------------------------|
-| Frontend UI    | Vanilla HTML/CSS/Canvas (exact match) → later React/Next |
-| Orchestrator   | TypeScript / Node or Python     |
-| Agents         | Modular (Programming, Frontend, Backend, Database, Design, Test, Deploy, Memory, Security…) |
-| Memory         | PostgreSQL + Redis + Vector DB (RAG) |
-| Sandbox        | Docker / isolated processes     |
-| Deploy targets | Cloudflare Pages/Workers, Vercel, Railway, Docker |
-| Models         | Local (Ollama etc.) + any OpenAI-compatible API |
+Hash: PBKDF2-SHA256 210k + salt + **pepper** server.
 
-## Roadmap (30-day MVP focus)
+## Setup (obbligatorio per auth server)
 
-1. Exact UI + mock multi-agent activation
-2. Orchestrator + 8–10 core agents
-3. Code generation (Next.js + FastAPI) + project export
-4. Auth, GitHub repo creation, Cloudflare deploy
-5. File support, basic RAG memory, modular search
+Vedi [docs/AUTH_SETUP.md](docs/AUTH_SETUP.md):
 
-## License
+```bash
+npx wrangler kv namespace create AUTH_KV
+# incolla id in wrangler.toml
+npx wrangler secret put PEPPER
+npx wrangler deploy
+```
 
-MIT – see [LICENSE](LICENSE)
+## UI
 
-## Contributing
+Menu **⋮** → cronologia (elimina), Accedi/Registrati, Dashboard sicurezza (solo admin).
 
-PRs welcome. Open issues for agents, providers, visual builder features.
+## Prossimi step
 
----
+1. Ricerca web modulare multi-provider  
+2. Orchestrator + provider AI  
+3. MFA TOTP  
 
-Made to be independent, self-hostable and under your control.
+MIT License – contact damon969gin@gmail.com
