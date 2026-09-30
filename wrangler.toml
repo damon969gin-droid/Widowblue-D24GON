@@ -1,12 +1,20 @@
-# Cloudflare – static assets deploy
-# Works with both Pages and `wrangler deploy`
-
 name = "widowblue-d24gon"
+main = "src/worker.js"
 compatibility_date = "2026-09-01"
 
-# For Pages Git builds
-pages_build_output_dir = "frontend"
-
-# For `npx wrangler deploy` (used by current build settings)
+# Static HUD frontend
 [assets]
 directory = "./frontend"
+binding = "ASSETS"
+
+# Auth storage (create once):
+#   npx wrangler kv namespace create AUTH_KV
+#   npx wrangler kv namespace create AUTH_KV --preview
+# Then paste the ids below.
+# [[kv_namespaces]]
+# binding = "AUTH_KV"
+# id = "YOUR_KV_ID"
+# preview_id = "YOUR_PREVIEW_KV_ID"
+
+# Secret (required in production):
+#   npx wrangler secret put PEPPER
