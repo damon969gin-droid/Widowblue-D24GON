@@ -1,5 +1,5 @@
 /**
- * WidowBlue Worker – Auth + Search + Orchestrator + static assets
+ * WidowBlue Worker – Auth + Search + Orchestrator + conversation context
  * Superadmin: giorgi.daniele96@gmail.com
  */
 
@@ -33,6 +33,7 @@ async function handleApi(request, env, url) {
         {
           ok: true,
           service: 'widowblue',
+          conversation: true,
           kv: !!env.AUTH_KV,
           tavily: !!env.TAVILY_API_KEY,
           serper: !!env.SERPER_API_KEY,
@@ -67,13 +68,64 @@ async function handleApi(request, env, url) {
   }
 }
 
+/** Continua il discorso: arricchisce follow-up con contesto precedente */
+function resolveWithHistory(prompt, history) {
+  const p = String(prompt || '').trim();
+  if (!p) return { query: p, entity: null, followUp: false };
+
+  const hist = Array.isArray(history) ? history.slice(-12) : [];
+  let entity = null;
+  for (let i = hist.length - 1; i >= 0; i--) {
+    const h = hist[i];
+    if (h && h.entity) {
+      entity = String(h.entity).trim();
+      break;
+    }
+  }
+  if (!entity) {
+    for (let i = hist.length - 1; i >= 0; i--) {
+      const h = hist[i];
+      if (h && h.role === 'user' && h.text) {
+        // ultima domanda utente sostanziale
+        const t = String(h.text).trim();
+        if (t.length > 8) {
+          entity = t
+            .replace(/^(quando|chi|cosa|come|dove|perché|perche|what|when|who|where|why)\b[\s\S]{0,20}/i, '')
+            .replace(/\?+$/g, '')
+            .trim();
+          if (entity.length > 2) break;
+        }
+      }
+    }
+  }
+
+  const followUp =
+    p.length < 70 ||
+    /^(e |ed |ma |poi |anche |quindi |invece |però |pero |e lui|e lei|e dopo|and |but |then |also |why |how |when |where )/i.test(
+      p
+    ) ||
+    /^(quando|dove|come|perché|perche|chi|cosa)\b/i.test(p);
+
+  let query = p;
+  if (followUp && entity && !p.toLowerCase().includes(entity.toLowerCase().slice(0, 12))) {
+    query = entity + ' — ' + p;
+  }
+
+  return { query, entity, followUp };
+}
+
 async function handleSearch(request, env, cors) {
   const body = await request.json().catch(() => ({}));
-  const query = String(body.query || body.q || '').trim();
+  const raw = String(body.query || body.q || '').trim();
   const deep = !!body.deep;
-  if (!query) return json({ error: 'empty_query' }, 400, cors);
+  const history = body.history || [];
+  if (!raw) return json({ error: 'empty_query' }, 400, cors);
+  const resolved = resolveWithHistory(raw, history);
   await logSpider(env, 'search_query', null, request);
-  const data = await modularSearch(query, { deep, env });
+  const data = await modularSearch(resolved.query, { deep, env });
+  data.resolvedQuery = resolved.query;
+  data.followUp = resolved.followUp;
+  data.contextEntity = resolved.entity;
   return json(data, 200, cors);
 }
 
@@ -83,11 +135,41 @@ async function handleOrchestrate(request, env, cors) {
   const deep = !!body.deep;
   const doSearch = body.search !== false;
   const attachments = Array.isArray(body.attachments) ? body.attachments : [];
+  const history = body.history || [];
   if (!prompt && !attachments.length) return json({ error: 'empty_prompt' }, 400, cors);
+
+  const resolved = resolveWithHistory(prompt, history);
   let search = null;
-  if (doSearch && prompt) search = await modularSearch(prompt, { deep, env });
+  if (doSearch && resolved.query) {
+    search = await modularSearch(resolved.query, { deep, env });
+    search.resolvedQuery = resolved.query;
+    search.followUp = resolved.followUp;
+    search.contextEntity = resolved.entity;
+  }
+
+  // Entity per prossima domanda: titolo risposta
+  let entity =
+    (search && search.answer && search.answer.title) ||
+    resolved.entity ||
+    null;
+  if (entity) entity = String(entity).replace(/\s*\((IT|EN)\)\s*$/i, '').trim();
+
   const plan = buildPlan(prompt, attachments, deep, search);
-  return json({ ok: true, plan, search }, 200, cors);
+  return json(
+    {
+      ok: true,
+      plan,
+      search,
+      conversation: {
+        followUp: resolved.followUp,
+        resolvedQuery: resolved.query,
+        entity,
+        historyTurns: Array.isArray(history) ? history.length : 0,
+      },
+    },
+    200,
+    cors
+  );
 }
 
 function buildPlan(prompt, attachments, deep, search) {
@@ -102,7 +184,7 @@ function buildPlan(prompt, attachments, deep, search) {
   if (!stack.length) stack.push('Next.js + Tailwind', 'Cloudflare Workers');
   const sources =
     search && search.results
-      ? search.results.slice(0, deep ? 12 : 5).map((r) => ({
+      ? search.results.slice(0, deep ? 8 : 5).map((r) => ({
           title: r.title,
           url: r.url,
           provider: r.provider,
@@ -115,20 +197,8 @@ function buildPlan(prompt, attachments, deep, search) {
     attachments: attachments.map((a) => (typeof a === 'string' ? a : a.name || 'file')),
     stack,
     steps: deep
-      ? [
-          'Coordinatore: WBS e rischi',
-          'Ricerca multi-provider (Wiki, DDG, Tavily, Serper, …)',
-          'Design system',
-          'Frontend',
-          'Backend API',
-          'Database + backup 3-2-1',
-          'Sicurezza NIS2',
-          'Test',
-          'Memoria RAG',
-          'Deploy Cloudflare',
-          'Documentazione',
-        ]
-      : ['Coordinatore', 'Design', 'Frontend', 'Backend', 'Deploy'],
+      ? ['Ricerca contestuale', 'Sintesi', 'Fonti']
+      : ['Ricerca', 'Sintesi'],
     sources,
     providersUsed: search ? search.providers : [],
     policy: search ? search.policy : null,
