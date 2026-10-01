@@ -14,48 +14,53 @@ if(SR){rec=new SR();rec.interimResults=true;rec.continuous=false;rec.onresult=e=
 voiceBtn.onclick=()=>{if(!rec){say('Voce','Usa Chrome/Edge per la voce');return}if(listening){rec.stop();return}rec.lang=currentLang();listening=true;voiceBtn.classList.add('rec');voiceBtn.textContent='Ascolto\u2026';try{rec.start()}catch(e){listening=false;voiceBtn.classList.remove('rec');voiceBtn.textContent='Voce'}};
 document.getElementById('allAgents').onclick=function(){allMode=!allMode;this.textContent='Tutti gli agenti: '+(allMode?'s\u00ec':'no');this.classList.toggle('on',allMode);if(allMode){for(let i=0;i<nodes.length;i++)nodes[i].act=Math.max(nodes[i].act,.45);say('Rete','TUTTI GLI AGENTI ON \u00b7 '+nodes.length+' nodi \u00b7 ogni Invia = ricerca approfondita')}else say('Rete','modalit\u00e0 standard (core agents)')};
 
+function isSoftwareRequest(prompt){
+  const ql=(prompt||'').toLowerCase();
+  return /sito|web|landing|app|api|backend|frontend|database|deploy|software|programma|codice|react|next|flutter|dashboard|login|registrazione|crea|costruisci|sviluppa/.test(ql);
+}
+
 /** Costruisce una risposta leggibile dalle fonti modular search */
 function formatSearchAnswer(prompt,nAgents,deep,plan,search){
   const lines=[];
   lines.push(deep?'══ WIDOWBLUE · RISPOSTA DEEP ══':'══ WIDOWBLUE · RISPOSTA ══');
   lines.push('Richiesta: '+prompt);
   lines.push('Agenti: '+nAgents+(deep?' · tutti attivi':''));
+  if(search&&search.queryNormalized&&search.queryNormalized!==prompt){
+    lines.push('Query normalizzata: '+search.queryNormalized);
+  }
   lines.push('');
 
   const results=(search&&search.results)||[];
   const providers=(search&&search.providers)||[];
+  const answer=search&&search.answer;
 
-  // Sintesi dalle snippet (priorità: perplexity, wikipedia, duckduckgo, altri)
-  const order=['perplexity','wikipedia','duckduckgo','google','bing','brave'];
-  const sorted=results.slice().sort((a,b)=>{
-    const ia=order.indexOf(a.provider);const ib=order.indexOf(b.provider);
-    return (ia<0?99:ia)-(ib<0?99:ib);
-  });
-
-  if(sorted.length){
-    lines.push('— RISPOSTA (dalle fonti) —');
-    const seen=new Set();
-    let n=0;
-    for(const r of sorted){
-      const sn=(r.snippet||'').trim();
-      if(!sn||sn.length<20)continue;
-      const key=sn.slice(0,60).toLowerCase();
-      if(seen.has(key))continue;
-      seen.add(key);
-      lines.push((++n)+'. ['+r.provider+'] '+sn.slice(0,320));
-      if(n>=(deep?8:5))break;
+  lines.push('— RISPOSTA —');
+  if(answer&&answer.text){
+    lines.push(answer.text);
+    if(answer.title)lines.push('Fonte principale: ['+(answer.provider||'?')+'] '+answer.title);
+    if(answer.url)lines.push(answer.url);
+  }else if(results.length){
+    // fallback: primo snippet lungo / summary
+    const best=results.find(r=>r.kind==='summary'&&r.snippet)||results.find(r=>(r.snippet||'').length>40);
+    if(best){
+      lines.push(best.snippet.slice(0,700));
+      lines.push('Fonte: ['+best.provider+'] '+(best.title||''));
+      if(best.url)lines.push(best.url);
+    }else{
+      lines.push('(nessuna sintesi disponibile — vedi fonti)');
     }
-    if(!n)lines.push('(nessuno snippet utile — vedi fonti sotto)');
+  }else{
+    lines.push('Ricerca live non ha restituito risultati utili.');
+    lines.push('Suggerimento: aggiungi TAVILY_API_KEY o SERPER_API_KEY nei secret Cloudflare.');
+  }
+
+  if(results.length){
     lines.push('');
     lines.push('— FONTI TRACCIATE —');
-    sorted.slice(0,deep?15:8).forEach((r,i)=>{
+    results.slice(0,deep?12:8).forEach((r,i)=>{
       lines.push((i+1)+'. ['+r.provider+'] '+(r.title||'senza titolo'));
       if(r.url)lines.push('   '+r.url);
     });
-  }else{
-    lines.push('— RISPOSTA —');
-    lines.push('Ricerca live non ha restituito risultati (provider offline o senza chiavi API).');
-    lines.push('Attivi sempre: Wikipedia + DuckDuckGo. Aggiungi Google/Bing/Brave/Perplexity dai secret Cloudflare.');
   }
 
   if(providers.length){
@@ -66,9 +71,10 @@ function formatSearchAnswer(prompt,nAgents,deep,plan,search){
     });
   }
 
-  if(plan&&plan.stack&&plan.stack.length){
+  // Piano progetto solo se la richiesta è di tipo software
+  if(isSoftwareRequest(prompt)&&plan&&plan.stack&&plan.stack.length){
     lines.push('');
-    lines.push('— PIANO PROGETTO (se applicabile) —');
+    lines.push('— PIANO PROGETTO —');
     lines.push('Stack: '+plan.stack.join(' · '));
     if(plan.steps)plan.steps.forEach((s,i)=>lines.push((i+1)+'. '+s));
   }
@@ -134,7 +140,6 @@ function run(){
           }catch(e){say('Ricerca','fallback locale · '+String(e.message||e));}
         }
         if(!usedApi){
-          // Prova search diretto, poi fallback analyze
           try{
             if(window.wbApi&&wbApi.search){
               const sr=await wbApi.search(prompt,allMode);
