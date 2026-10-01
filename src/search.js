@@ -1,23 +1,57 @@
 /**
  * WidowBlue – ricerca web modulare multi-provider
- *
- * Sempre: wikipedia (it+en), duckduckgo
- * Opzionali: TAVILY, SERPER, BRAVE, GOOGLE, BING, PERPLEXITY
+ * Wikipedia: ranking + REST summary (risposte utili senza API a pagamento)
  */
 
-const UA = 'WidowBlueBot/0.5 (+https://github.com/damon969gin-droid/Widowblue-D24GON; research; respectful)';
-const TIMEOUT_MS = 10000;
+const UA = 'WidowBlueBot/0.6 (+https://github.com/damon969gin-droid/Widowblue-D24GON; research; respectful)';
+const TIMEOUT_MS = 12000;
 
-/** Rimuove prefissi tipo "cos è", "what is" per migliorare match su Wiki/DDG */
 function normalizeQuery(q) {
-  const cleaned = String(q || '')
-    .trim()
+  let s = String(q || '').trim();
+  s = s
     .replace(/^(che\s+)?cos[''\u2019]?\s*[eè]\s+/i, '')
     .replace(/^cosa\s+(è|e)\s+/i, '')
-    .replace(/^(what\s+is|who\s+is|how\s+does)\s+/i, '')
+    .replace(/^(when\s+(was|were|is|did)|who\s+(is|was)|what\s+is)\s+/i, '')
+    .replace(/^(quando\s+(è|e|fu|nasce|nato)|chi\s+(è|e|era)|dove\s+(è|e|vive)|perché|perche)\s+/i, '')
+    .replace(/\b(è|e)\s+nato\b/gi, '')
+    .replace(/\bnato\b/gi, '')
+    .replace(/\bnascita\b/gi, '')
+    .replace(/\bborn\b/gi, '')
+    .replace(/\bdate\s+of\s+birth\b/gi, '')
     .replace(/\?+$/g, '')
+    .replace(/\s+/g, ' ')
     .trim();
-  return cleaned || String(q || '').trim();
+  return s || String(q || '').trim();
+}
+
+function tokens(s) {
+  return String(s || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .split(/\s+/)
+    .filter((t) => t.length > 2 && !['the', 'and', 'del', 'della', 'dei', 'delle', 'gli', 'che', 'una', 'per'].includes(t));
+}
+
+function scoreResult(r, qTokens) {
+  const title = (r.title || '').toLowerCase().replace(/\s*\((it|en)\)\s*$/i, '');
+  const sn = (r.snippet || '').toLowerCase();
+  let score = 0;
+  for (const t of qTokens) {
+    if (title.includes(t)) score += 8;
+    if (sn.includes(t)) score += 2;
+  }
+  // prefer exact-ish title match
+  if (qTokens.length && qTokens.every((t) => title.includes(t))) score += 20;
+  // prefer short titles (entity pages)
+  if (title.length < 40) score += 3;
+  // boost wikipedia summaries
+  if (r.kind === 'summary') score += 15;
+  if (r.provider === 'tavily' || r.provider === 'perplexity' || r.provider === 'serper') score += 5;
+  // penalize disambiguation / painter / football noise lightly when query has person tokens
+  if (/disambigua|disambiguation/i.test(title + sn)) score -= 15;
+  return score;
 }
 
 export async function modularSearch(query, opts = {}) {
@@ -25,6 +59,7 @@ export async function modularSearch(query, opts = {}) {
   if (!q) return { ok: false, error: 'empty_query', results: [], providers: [] };
 
   const qNorm = normalizeQuery(q);
+  const qTokens = tokens(qNorm);
   const deep = !!opts.deep;
   const env = opts.env || {};
   const providers = [];
@@ -32,7 +67,7 @@ export async function modularSearch(query, opts = {}) {
   const errors = [];
 
   const jobs = [
-    runProvider('wikipedia', () => searchWikipedia(q, qNorm)),
+    runProvider('wikipedia', () => searchWikipedia(q, qNorm, qTokens)),
     runProvider('duckduckgo', () => searchDuckDuckGo(qNorm || q)),
   ];
 
@@ -65,12 +100,27 @@ export async function modularSearch(query, opts = {}) {
   }
 
   const seen = new Set();
-  const unique = [];
+  let unique = [];
   for (const r of results) {
     const key = (r.url || r.title || '').toLowerCase();
     if (!key || seen.has(key)) continue;
     seen.add(key);
+    r._score = scoreResult(r, qTokens);
     unique.push(r);
+  }
+  unique.sort((a, b) => (b._score || 0) - (a._score || 0));
+  unique = unique.slice(0, deep ? 40 : 15);
+
+  // Answer: best summary / extract first
+  let answer = null;
+  const top = unique.find((r) => r.kind === 'summary' && r.snippet) || unique.find((r) => r.snippet && r.snippet.length > 40);
+  if (top) {
+    answer = {
+      text: top.snippet.slice(0, 700),
+      title: top.title,
+      url: top.url,
+      provider: top.provider,
+    };
   }
 
   return {
@@ -78,16 +128,16 @@ export async function modularSearch(query, opts = {}) {
     query: q,
     queryNormalized: qNorm,
     deep,
+    answer,
     providers,
     errors,
-    results: unique.slice(0, deep ? 40 : 15),
+    results: unique.map(({ _score, ...rest }) => rest),
     policy: {
       respectful: true,
       notes: [
-        'Solo API ufficiali (no scraping SERP)',
-        'Wikipedia: it.wikipedia + en.wikipedia',
-        'DuckDuckGo Instant Answer è limitato; Tavily/Serper danno più risultati',
-        'Tracciabilità: provider + url su ogni item',
+        'Wikipedia IT+EN + summary REST',
+        'Ranking per rilevanza titolo/query',
+        'Tavily/Serper migliorano le risposte fattuali',
       ],
     },
     fetchedAt: Date.now(),
@@ -128,11 +178,12 @@ async function wikiOpenSearch(lang, term) {
     title: title + (lang === 'it' ? ' (IT)' : ''),
     url: urls[i] || '',
     snippet: descs[i] || '',
+    lang,
+    wikiTitle: title,
     fetchedAt: Date.now(),
   }));
 }
 
-/** Wikipedia search API (list=search) + extract snippet */
 async function wikiListSearch(lang, term) {
   const searchUrl =
     'https://' +
@@ -148,11 +199,41 @@ async function wikiListSearch(lang, term) {
     title: h.title + (lang === 'it' ? ' (IT)' : ''),
     url: 'https://' + lang + '.wikipedia.org/wiki/' + encodeURIComponent(h.title.replace(/ /g, '_')),
     snippet: (h.snippet || '').replace(/<[^>]+>/g, ''),
+    lang,
+    wikiTitle: h.title,
     fetchedAt: Date.now(),
   }));
 }
 
-async function searchWikipedia(q, qNorm) {
+/** Summary REST: extract leggibile (nascita, biografia, ecc.) */
+async function wikiSummary(lang, title) {
+  const url =
+    'https://' +
+    lang +
+    '.wikipedia.org/api/rest_v1/page/summary/' +
+    encodeURIComponent(title.replace(/ /g, '_'));
+  const res = await fetch(url, {
+    headers: { 'User-Agent': UA, Accept: 'application/json' },
+  });
+  if (!res.ok) return null;
+  const data = await res.json();
+  if (data.type === 'disambiguation') return null;
+  const extract = data.extract || data.description || '';
+  if (!extract || extract.length < 20) return null;
+  return {
+    provider: 'wikipedia',
+    kind: 'summary',
+    title: (data.title || title) + (lang === 'it' ? ' (IT)' : ''),
+    url: (data.content_urls && data.content_urls.desktop && data.content_urls.desktop.page) ||
+      'https://' + lang + '.wikipedia.org/wiki/' + encodeURIComponent(title.replace(/ /g, '_')),
+    snippet: extract,
+    lang,
+    wikiTitle: data.title || title,
+    fetchedAt: Date.now(),
+  };
+}
+
+async function searchWikipedia(q, qNorm, qTokens) {
   const terms = [...new Set([qNorm, q].filter(Boolean))];
   const jobs = [];
   for (const term of terms) {
@@ -169,10 +250,37 @@ async function searchWikipedia(q, qNorm) {
       const k = (r.url || r.title).toLowerCase();
       if (seen.has(k)) continue;
       seen.add(k);
+      r._score = scoreResult(r, qTokens);
       out.push(r);
     }
   }
-  return out.slice(0, 10);
+  out.sort((a, b) => (b._score || 0) - (a._score || 0));
+
+  // Enrich top 3 with full extract
+  const top = out.slice(0, 4);
+  const summaries = await Promise.all(
+    top.map((r) =>
+      r.wikiTitle && r.lang
+        ? wikiSummary(r.lang, r.wikiTitle).catch(() => null)
+        : Promise.resolve(null)
+    )
+  );
+  const enriched = [];
+  const seen2 = new Set();
+  for (const s of summaries) {
+    if (!s) continue;
+    const k = (s.url || s.title).toLowerCase();
+    if (seen2.has(k)) continue;
+    seen2.add(k);
+    enriched.push(s);
+  }
+  for (const r of out) {
+    const k = (r.url || r.title).toLowerCase();
+    if (seen2.has(k)) continue;
+    seen2.add(k);
+    enriched.push(r);
+  }
+  return enriched.slice(0, 12);
 }
 
 async function searchDuckDuckGo(q) {
@@ -185,6 +293,7 @@ async function searchDuckDuckGo(q) {
   if (data.AbstractText) {
     out.push({
       provider: 'duckduckgo',
+      kind: 'summary',
       title: data.Heading || q,
       url: data.AbstractURL || '',
       snippet: data.AbstractText,
@@ -253,6 +362,7 @@ async function searchTavily(q, apiKey, deep) {
   if (data.answer) {
     out.push({
       provider: 'tavily',
+      kind: 'summary',
       title: 'Sintesi Tavily',
       url: 'https://tavily.com/',
       snippet: String(data.answer).slice(0, 600),
@@ -291,6 +401,7 @@ async function searchSerper(q, apiKey, num = 5) {
   if (data.answerBox && (data.answerBox.answer || data.answerBox.snippet)) {
     out.push({
       provider: 'serper',
+      kind: 'summary',
       title: data.answerBox.title || 'Answer Box',
       url: data.answerBox.link || '',
       snippet: data.answerBox.answer || data.answerBox.snippet || '',
@@ -300,6 +411,7 @@ async function searchSerper(q, apiKey, num = 5) {
   if (data.knowledgeGraph && data.knowledgeGraph.description) {
     out.push({
       provider: 'serper',
+      kind: 'summary',
       title: data.knowledgeGraph.title || 'Knowledge Graph',
       url: data.knowledgeGraph.descriptionLink || data.knowledgeGraph.website || '',
       snippet: data.knowledgeGraph.description,
@@ -458,6 +570,7 @@ async function searchPerplexity(q, apiKey, deep) {
   if (content) {
     out.unshift({
       provider: 'perplexity',
+      kind: 'summary',
       title: 'Sintesi Perplexity',
       url: 'https://www.perplexity.ai/',
       snippet: content.slice(0, 500),
