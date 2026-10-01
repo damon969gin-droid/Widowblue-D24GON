@@ -1,4 +1,4 @@
-/* WidowBlue API client – auth, search, orchestrate */
+/* WidowBlue API client – auth, search, orchestrate + history */
 (function () {
   const API = '';
 
@@ -25,11 +25,12 @@
     timedKey: (token) =>
       api('/api/auth/timed-key', { method: 'POST', headers: { Authorization: 'Bearer ' + token } }),
 
-    /** Ricerca modulare multi-provider */
-    search: (query, deep) =>
-      api('/api/search', { method: 'POST', body: JSON.stringify({ query, deep: !!deep }) }),
+    search: (query, deep, history) =>
+      api('/api/search', {
+        method: 'POST',
+        body: JSON.stringify({ query, deep: !!deep, history: history || [] }),
+      }),
 
-    /** Piano + ricerca (backend orchestrator) */
     orchestrate: (prompt, opts) =>
       api('/api/orchestrate', {
         method: 'POST',
@@ -38,6 +39,7 @@
           deep: !!(opts && opts.deep),
           search: opts && opts.search === false ? false : true,
           attachments: (opts && opts.attachments) || [],
+          history: (opts && opts.history) || [],
         }),
       }),
   };
