@@ -1,10 +1,11 @@
 /**
  * WidowBlue – ricerca web modulare multi-provider
- * Risposte focalizzate: es. data di nascita da Wikipedia summary
+ * Priorità risposte: Tavily / Serper (web live) → Wikipedia → DDG
  */
 
-const UA = 'WidowBlueBot/0.7 (+https://github.com/damon969gin-droid/Widowblue-D24GON; research; respectful)';
+const UA = 'WidowBlueBot/0.8 (+https://github.com/damon969gin-droid/Widowblue-D24GON; research; respectful)';
 const TIMEOUT_MS = 12000;
+const WEB_PROVIDERS = new Set(['tavily', 'serper', 'perplexity', 'brave', 'google', 'bing']);
 
 function normalizeQuery(q) {
   let s = String(q || '').trim();
@@ -45,19 +46,24 @@ function scoreResult(r, qTokens) {
   if (qTokens.length && qTokens.every((t) => title.includes(t))) score += 25;
   if (title.length < 45) score += 4;
   if (r.kind === 'summary') score += 20;
-  if (r.provider === 'tavily' || r.provider === 'perplexity' || r.provider === 'serper') score += 6;
+  // Web live providers: priorità alta per risposte precise
+  if (r.provider === 'tavily') score += r.kind === 'summary' ? 50 : 25;
+  if (r.provider === 'serper') score += r.kind === 'summary' ? 45 : 22;
+  if (r.provider === 'perplexity') score += r.kind === 'summary' ? 40 : 15;
+  if (r.provider === 'brave' || r.provider === 'google' || r.provider === 'bing') score += 12;
   if (/disambigua|disambiguation/i.test(title + sn)) score -= 25;
   if (/procaccini|pittore|painter|atalanta|calcio|football/i.test(title + sn)) score -= 10;
   return score;
 }
 
-/** Estrae risposta corta e diretta dalla query + testo fonte */
 function focusAnswer(query, text, title) {
   const ql = String(query || '').toLowerCase();
   const t = String(text || '');
-  const name = String(title || '').replace(/\s*\((IT|EN)\)\s*$/i, '').trim();
+  const name = String(title || '')
+    .replace(/\s*\((IT|EN)\)\s*$/i, '')
+    .replace(/^Sintesi\s+(Tavily|Perplexity|Serper).*$/i, '')
+    .trim();
 
-  // Nascita / when born
   if (/nato|nascita|\bborn\b|when was|data di nascita/i.test(ql)) {
     const patterns = [
       /nato(?:\s+a)?\s+[^.]{5,90}/i,
@@ -73,28 +79,75 @@ function focusAnswer(query, text, title) {
       const m = t.match(re);
       if (m) {
         let bit = m[0].replace(/^[,\s(]+|[)\s.]+$/g, '').trim();
-        if (/^nato|^nata|^born/i.test(bit)) {
-          return name + ' è ' + bit + '.';
-        }
-        return name + ' è nato il ' + bit + '.';
+        if (/^nato|^nata|^born/i.test(bit)) return (name ? name + ' è ' : '') + bit + '.';
+        return (name ? name + ' è nato il ' : 'Nato il ') + bit + '.';
       }
     }
   }
 
-  // Chi è / cos'è → prima frase
   if (/^chi\s|^cos|^what is|^who is/i.test(ql)) {
     const first = t.split(/(?<=[.!?])\s+/)[0];
     if (first && first.length > 20) return first.trim();
   }
 
-  // Default: prime 2 frasi max ~350 char
+  // Tavily/Serper: spesso già una risposta completa → usa quasi intero
+  if (t.length <= 500) return t.trim();
+
   const sentences = t.split(/(?<=[.!?])\s+/).filter(Boolean);
   let out = '';
-  for (const s of sentences.slice(0, 2)) {
-    if ((out + ' ' + s).length > 380) break;
+  for (const s of sentences.slice(0, 3)) {
+    if ((out + ' ' + s).length > 450) break;
     out = out ? out + ' ' + s : s;
   }
-  return out || t.slice(0, 350);
+  return out || t.slice(0, 450);
+}
+
+function pickBestAnswer(unique, q) {
+  // 1) Sintesi web (Tavily answer, Serper answerBox, Perplexity)
+  const webSummary = unique.find(
+    (r) => WEB_PROVIDERS.has(r.provider) && r.kind === 'summary' && r.snippet && r.snippet.length > 20
+  );
+  if (webSummary) {
+    return {
+      text: focusAnswer(q, webSummary.snippet, webSummary.title),
+      title: webSummary.title,
+      url: webSummary.url,
+      provider: webSummary.provider,
+    };
+  }
+  // 2) Qualsiasi risultato web con snippet buono
+  const webHit = unique.find(
+    (r) => WEB_PROVIDERS.has(r.provider) && r.snippet && r.snippet.length > 40
+  );
+  if (webHit) {
+    return {
+      text: focusAnswer(q, webHit.snippet, webHit.title),
+      title: webHit.title,
+      url: webHit.url,
+      provider: webHit.provider,
+    };
+  }
+  // 3) Wikipedia summary
+  const wiki = unique.find((r) => r.provider === 'wikipedia' && r.kind === 'summary' && r.snippet);
+  if (wiki) {
+    return {
+      text: focusAnswer(q, wiki.snippet, wiki.title),
+      title: wiki.title,
+      url: wiki.url,
+      provider: wiki.provider,
+    };
+  }
+  // 4) Fallback
+  const any = unique.find((r) => r.snippet && r.snippet.length > 40);
+  if (any) {
+    return {
+      text: focusAnswer(q, any.snippet, any.title),
+      title: any.title,
+      url: any.url,
+      provider: any.provider,
+    };
+  }
+  return null;
 }
 
 export async function modularSearch(query, opts = {}) {
@@ -114,11 +167,12 @@ export async function modularSearch(query, opts = {}) {
     runProvider('duckduckgo', () => searchDuckDuckGo(qNorm || q)),
   ];
 
+  // Web live: usa la query originale (più precisa per Tavily/Serper)
   if (env.TAVILY_API_KEY) {
     jobs.push(runProvider('tavily', () => searchTavily(q, env.TAVILY_API_KEY, deep)));
   }
   if (env.SERPER_API_KEY) {
-    jobs.push(runProvider('serper', () => searchSerper(q, env.SERPER_API_KEY, deep ? 10 : 5)));
+    jobs.push(runProvider('serper', () => searchSerper(q, env.SERPER_API_KEY, deep ? 10 : 8)));
   }
   if (env.BRAVE_API_KEY) {
     jobs.push(runProvider('brave', () => searchBrave(q, env.BRAVE_API_KEY, deep ? 10 : 5)));
@@ -152,23 +206,10 @@ export async function modularSearch(query, opts = {}) {
     unique.push(r);
   }
   unique.sort((a, b) => (b._score || 0) - (a._score || 0));
-  // Per domande fattuali: poche fonti di qualità
-  const maxRes = deep ? 8 : 5;
-  unique = unique.slice(0, maxRes);
+  unique = unique.slice(0, deep ? 10 : 6);
 
-  let answer = null;
-  const top =
-    unique.find((r) => r.kind === 'summary' && r.snippet && (r._score || 0) > 5) ||
-    unique.find((r) => r.snippet && r.snippet.length > 40);
-  if (top) {
-    const focused = focusAnswer(q, top.snippet, top.title);
-    answer = {
-      text: focused,
-      title: top.title,
-      url: top.url,
-      provider: top.provider,
-    };
-  }
+  const answer = pickBestAnswer(unique, q);
+  const webActive = providers.some((p) => WEB_PROVIDERS.has(p.name) && p.ok && p.count > 0);
 
   return {
     ok: true,
@@ -176,12 +217,17 @@ export async function modularSearch(query, opts = {}) {
     queryNormalized: qNorm,
     deep,
     answer,
+    webLive: webActive,
     providers,
     errors,
     results: unique.map(({ _score, ...rest }) => rest),
     policy: {
       respectful: true,
-      notes: ['Risposta focalizzata + fonti tracciate', 'Wikipedia summary REST'],
+      notes: [
+        'Priorità: Tavily/Serper (web) se configurati',
+        'Poi Wikipedia / DuckDuckGo',
+        'Risposta unica + fonti tracciate',
+      ],
     },
     fetchedAt: Date.now(),
   };
@@ -393,8 +439,8 @@ async function searchTavily(q, apiKey, deep) {
       provider: 'tavily',
       kind: 'summary',
       title: 'Sintesi Tavily',
-      url: 'https://tavily.com/',
-      snippet: String(data.answer).slice(0, 600),
+      url: (data.results && data.results[0] && data.results[0].url) || 'https://tavily.com/',
+      snippet: String(data.answer).slice(0, 700),
       fetchedAt: Date.now(),
     });
   }
@@ -419,7 +465,7 @@ async function searchSerper(q, apiKey, num = 5) {
       Accept: 'application/json',
       'User-Agent': UA,
     },
-    body: JSON.stringify({ q, num: Math.min(Math.max(1, num), 10) }),
+    body: JSON.stringify({ q, num: Math.min(Math.max(1, num), 10), gl: 'it', hl: 'it' }),
   });
   if (!res.ok) {
     const errBody = await res.text().catch(() => '');
@@ -557,7 +603,7 @@ async function searchPerplexity(q, apiKey, deep) {
         {
           role: 'system',
           content:
-            'You are a research assistant. Reply briefly in Italian. List key facts. Prefer reliable sources.',
+            'You are a research assistant. Reply briefly in Italian. Give precise facts. Prefer reliable sources.',
         },
         { role: 'user', content: q },
       ],
