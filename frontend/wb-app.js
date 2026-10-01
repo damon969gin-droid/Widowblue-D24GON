@@ -12,91 +12,92 @@ let rec=null,listening=false;const voiceBtn=document.getElementById('voice');con
 function currentLang(){const v=langSel.value;return v==='auto'?(navigator.language||'it-IT'):v}
 if(SR){rec=new SR();rec.interimResults=true;rec.continuous=false;rec.onresult=e=>{let final='';for(let i=e.resultIndex;i<e.results.length;i++){const t=e.results[i][0].transcript;if(e.results[i].isFinal)final+=t;else document.getElementById('q').placeholder=t}if(final){const q=document.getElementById('q');q.value=(q.value+' '+final).trim();q.placeholder='Scrivi, parla o allega...'}};rec.onend=()=>{listening=false;voiceBtn.classList.remove('rec');voiceBtn.textContent='Voce'};rec.onerror=()=>{listening=false;voiceBtn.classList.remove('rec');voiceBtn.textContent='Voce';say('Voce','microfono non disponibile')}}
 voiceBtn.onclick=()=>{if(!rec){say('Voce','Usa Chrome/Edge per la voce');return}if(listening){rec.stop();return}rec.lang=currentLang();listening=true;voiceBtn.classList.add('rec');voiceBtn.textContent='Ascolto\u2026';try{rec.start()}catch(e){listening=false;voiceBtn.classList.remove('rec');voiceBtn.textContent='Voce'}};
-document.getElementById('allAgents').onclick=function(){allMode=!allMode;this.textContent='Tutti gli agenti: '+(allMode?'s\u00ec':'no');this.classList.toggle('on',allMode);if(allMode){for(let i=0;i<nodes.length;i++)nodes[i].act=Math.max(nodes[i].act,.45);say('Rete','TUTTI GLI AGENTI ON \u00b7 '+nodes.length+' nodi \u00b7 ogni Invia = ricerca approfondita')}else say('Rete','modalit\u00e0 standard (core agents)')};
+document.getElementById('allAgents').onclick=function(){allMode=!allMode;this.textContent='Tutti gli agenti: '+(allMode?'s\u00ec':'no');this.classList.toggle('on',allMode);if(allMode){for(let i=0;i<nodes.length;i++)nodes[i].act=Math.max(nodes[i].act,.45);say('Rete','TUTTI GLI AGENTI ON \u00b7 '+nodes.length+' nodi')}else say('Rete','modalit\u00e0 standard')};
 
 function isSoftwareRequest(prompt){
   const ql=(prompt||'').toLowerCase();
-  return /sito|web|landing|app|api|backend|frontend|database|deploy|software|programma|codice|react|next|flutter|dashboard|login|registrazione|crea|costruisci|sviluppa/.test(ql);
+  return /\b(sito|landing|backend|frontend|database|deploy|software|programma|codice|react|next\.js|flutter|dashboard|crea un|costruisci|sviluppa un|app mobile)\b/.test(ql);
 }
 
-/** Costruisce una risposta leggibile dalle fonti modular search */
+function esc(s){
+  return String(s||'').replace(/&/g,'&').replace(/</g,'<').replace(/>/g,'>').replace(/"/g,'"');
+}
+
+function linkHtml(url,label){
+  if(!url||!/^https?:\/\//i.test(url)) return esc(label||url||'');
+  return '<a href="'+esc(url)+'" target="_blank" rel="noopener noreferrer">'+esc(label||url)+'</a>';
+}
+
+/** Risposta pulita: solo risposta + fonti cliccabili */
 function formatSearchAnswer(prompt,nAgents,deep,plan,search){
-  const lines=[];
-  lines.push(deep?'══ WIDOWBLUE · RISPOSTA DEEP ══':'══ WIDOWBLUE · RISPOSTA ══');
-  lines.push('Richiesta: '+prompt);
-  lines.push('Agenti: '+nAgents+(deep?' · tutti attivi':''));
-  if(search&&search.queryNormalized&&search.queryNormalized!==prompt){
-    lines.push('Query normalizzata: '+search.queryNormalized);
-  }
-  lines.push('');
-
   const results=(search&&search.results)||[];
-  const providers=(search&&search.providers)||[];
   const answer=search&&search.answer;
+  const soft=isSoftwareRequest(prompt);
 
-  lines.push('— RISPOSTA —');
+  let plain='';
+  let html='';
+
+  // --- RISPOSTA ---
+  plain+='RISPOSTA\n';
+  html+='<div class="ans-block"><div class="ans-h">Risposta</div>';
   if(answer&&answer.text){
-    lines.push(answer.text);
-    if(answer.title)lines.push('Fonte principale: ['+(answer.provider||'?')+'] '+answer.title);
-    if(answer.url)lines.push(answer.url);
+    plain+=answer.text+'\n';
+    html+='<p class="ans-text">'+esc(answer.text)+'</p>';
   }else if(results.length){
-    // fallback: primo snippet lungo / summary
-    const best=results.find(r=>r.kind==='summary'&&r.snippet)||results.find(r=>(r.snippet||'').length>40);
-    if(best){
-      lines.push(best.snippet.slice(0,700));
-      lines.push('Fonte: ['+best.provider+'] '+(best.title||''));
-      if(best.url)lines.push(best.url);
-    }else{
-      lines.push('(nessuna sintesi disponibile — vedi fonti)');
-    }
+    const best=results.find(r=>r.kind==='summary'&&r.snippet)||results[0];
+    const t=(best.snippet||'').slice(0,400);
+    plain+=t+'\n';
+    html+='<p class="ans-text">'+esc(t)+'</p>';
   }else{
-    lines.push('Ricerca live non ha restituito risultati utili.');
-    lines.push('Suggerimento: aggiungi TAVILY_API_KEY o SERPER_API_KEY nei secret Cloudflare.');
+    plain+='Nessuna risposta trovata nelle fonti disponibili.\n';
+    html+='<p class="ans-text dim">Nessuna risposta trovata.</p>';
   }
+  html+='</div>';
 
-  if(results.length){
-    lines.push('');
-    lines.push('— FONTI TRACCIATE —');
-    results.slice(0,deep?12:8).forEach((r,i)=>{
-      lines.push((i+1)+'. ['+r.provider+'] '+(r.title||'senza titolo'));
-      if(r.url)lines.push('   '+r.url);
+  // --- FONTI (max 5, link cliccabili) ---
+  const sources=results.filter(r=>r.url).slice(0,5);
+  if(sources.length){
+    plain+='\nFONTI\n';
+    html+='<div class="ans-block"><div class="ans-h">Fonti</div><ol class="ans-src">';
+    sources.forEach((r,i)=>{
+      const title=r.title||r.url;
+      plain+=(i+1)+'. '+title+'\n   '+r.url+'\n';
+      html+='<li><span class="prov">['+esc(r.provider||'')+']</span> '+linkHtml(r.url,title)+'</li>';
     });
+    html+='</ol></div>';
   }
 
-  if(providers.length){
-    lines.push('');
-    lines.push('— PROVIDER —');
-    providers.forEach(pr=>{
-      lines.push('· '+pr.name+': '+(pr.ok?('ok · '+pr.count+' risultati · '+pr.ms+'ms'):('errore · '+(pr.error||''))));
-    });
+  // Piano solo se richiesta software esplicita
+  if(soft&&plan&&plan.stack&&plan.stack.length){
+    plain+='\nPIANO PROGETTO\nStack: '+plan.stack.join(' · ')+'\n';
+    html+='<div class="ans-block"><div class="ans-h">Piano progetto</div><p>'+esc(plan.stack.join(' · '))+'</p></div>';
   }
 
-  // Piano progetto solo se la richiesta è di tipo software
-  if(isSoftwareRequest(prompt)&&plan&&plan.stack&&plan.stack.length){
-    lines.push('');
-    lines.push('— PIANO PROGETTO —');
-    lines.push('Stack: '+plan.stack.join(' · '));
-    if(plan.steps)plan.steps.forEach((s,i)=>lines.push((i+1)+'. '+s));
-  }
-
-  lines.push('');
-  lines.push('— WidowBlue · ricerca modulare multi-provider');
-  return lines.join('\n');
+  return { plain, html };
 }
 
 function analyze(q,atts,deep){
-  const ql=q.toLowerCase();const links=q.match(/https?:\/\/[^\s]+/g)||[];
-  const wants={web:/sito|web|landing|html|next|react|frontend|pagina|website|ui|ux/.test(ql),api:/api|backend|server|endpoint|fastapi|node|express|graphql/.test(ql),db:/database|db|postgres|sql|supabase|neon|mongo|redis/.test(ql),mobile:/app|mobile|flutter|android|ios|swift|kotlin/.test(ql),auth:/login|auth|autenticazione|oauth|utente|registrazione|mfa|password/.test(ql),media:/immagine|video|logo|splash|avatar|image|audio/.test(ql),research:/cerca|ricerca|search|analizza|page|confronta|mercato|competitor/.test(ql)||links.length>0,security:/sicurezza|security|nis2|encrypt|firewall|waf/.test(ql),cloud:/cloudflare|aws|deploy|vercel|docker|k8s|hosting/.test(ql)};
-  const stack=[];if(wants.web)stack.push('Next.js + Tailwind + React');if(wants.api)stack.push('FastAPI / Node (API REST)');if(wants.db)stack.push('PostgreSQL + Redis');if(wants.mobile)stack.push('Flutter (iOS/Android)');if(wants.auth)stack.push('Auth JWT + MFA TOTP');if(wants.security)stack.push('WAF Cloudflare + Zero Trust');if(wants.cloud)stack.push('Cloudflare Workers/Pages + R2');if(wants.research)stack.push('Ricerca multi-provider tracciata');if(wants.media)stack.push('Pipeline media');if(!stack.length)stack.push('Next.js + Tailwind','Cloudflare Workers','Auth modulare');
-  const nAgents=nodes.length;let attNote='';
-  if(atts.length)attNote='\nAllegati:\n'+atts.map(a=>'- '+a.name+(a.text?' ['+a.text.length+' car]':a.note?(' ['+a.note+']'):'')).join('\n');
-  if(links.length)attNote+='\nLink rilevati:\n'+links.map(u=>'- '+u).join('\n');
-  if(!deep)return{title:'Piano WidowBlue',body:'RICHIESTA\n'+q+attNote+'\n\nMODALIT\u00c0\nStandard\n\nSTACK\n- '+stack.join('\n- ')+'\n\n\u2014 WidowBlue'};
-  return{title:'Analisi approfondita \u00b7 '+nAgents+' agenti',body:'DEEP SWEEP\nAgenti: '+nAgents+'\n\nRICHIESTA\n'+q+attNote+'\n\nSTACK\n- '+stack.join('\n- ')+'\n\n\u2014 WidowBlue deep'};
+  const ql=q.toLowerCase();
+  if(!isSoftwareRequest(q)){
+    return{title:'Risposta',body:{plain:'Nessuna fonte live disponibile. Riprova o configura Tavily/Serper.',html:'<p class="ans-text dim">Nessuna fonte live disponibile.</p>'}};
+  }
+  const stack=['Next.js + Tailwind','Cloudflare Workers'];
+  const plain='RICHIESTA\n'+q+'\n\nSTACK\n- '+stack.join('\n- ');
+  return{title:'Piano',body:{plain,html:'<pre>'+esc(plain)+'</pre>'}};
 }
-const stepsStd=[[0,'Analizzo','Coordinatore'],[3,'Design','Design'],[1,'Frontend','Frontend'],[2,'Backend','Backend'],[4,'Database','Database'],[5,'Media','Media'],[7,'Test','Test'],[8,'Memoria','Memoria'],[9,'Deploy','Deploy'],[10,'Sicurezza','Sicurezza'],[11,'Docs','Documenti']];
-const stepsDeep=[[0,'Deep sweep rete','Coordinatore'],[0,'Ricerca multi-fonte','Coordinatore'],[3,'Design system','Design'],[1,'Architettura UI','Frontend'],[2,'Contratti API','Backend'],[4,'Modello dati','Database'],[10,'Threat model','Sicurezza'],[5,'Asset media','Media'],[7,'Piano test','Test'],[8,'Contesto RAG','Memoria'],[9,'Pipeline deploy','Deploy'],[11,'Documentazione','Documenti'],[0,'Sintesi finale','Coordinatore']];
-function showPanel(title,body){lastResult=body;document.getElementById('ptitle').textContent=title;document.getElementById('pbody').textContent=body;document.getElementById('panel').style.display='block';document.getElementById('overlay').style.display='block'}
+const stepsStd=[[0,'Analizzo','Coordinatore'],[1,'Ricerca','Ricerca'],[0,'Sintesi','Coordinatore']];
+const stepsDeep=[[0,'Deep sweep','Coordinatore'],[0,'Ricerca multi-fonte','Ricerca'],[0,'Sintesi','Coordinatore']];
+
+function showPanel(title,body){
+  const plain=typeof body==='object'?body.plain:body;
+  const html=typeof body==='object'?body.html:null;
+  lastResult=plain||'';
+  document.getElementById('ptitle').textContent=title;
+  const el=document.getElementById('pbody');
+  if(html){el.innerHTML=html;el.classList.add('rich')}else{el.textContent=plain;el.classList.remove('rich')}
+  document.getElementById('panel').style.display='block';
+  document.getElementById('overlay').style.display='block';
+}
 document.getElementById('pclose').onclick=document.getElementById('overlay').onclick=()=>{document.getElementById('panel').style.display='none';document.getElementById('overlay').style.display='none'};
 document.getElementById('pcopy').onclick=async()=>{try{await navigator.clipboard.writeText(lastResult);say('Widow Blue','copiato')}catch(e){}};
 document.getElementById('pdl').onclick=()=>{const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([lastResult],{type:'text/plain'}));a.download='widowblue-risposta.txt';a.click()};
@@ -111,43 +112,42 @@ function run(){
   if(atts.length){const ad=document.createElement('div');ad.className='atts';ad.textContent='Allegati: '+atts.map(a=>a.name).join(', ');userDiv.appendChild(ad)}
   logEl.appendChild(userDiv);logEl.scrollTop=1e9;
   const nAgents=nodes.length;
-  if(allMode){say('Coordinatore','TUTTI GLI AGENTI \u2014 '+nAgents+' agenti, ricerca approfondita\u2026');fireAll()}
-  else{say('Coordinatore','elaborazione + ricerca modulare\u2026');fire(0)}
-  const steps=allMode?stepsDeep:stepsStd;const delay=allMode?420:650;let i=0;
+  if(allMode){say('Coordinatore','ricerca approfondita\u2026');fireAll()}
+  else{say('Coordinatore','ricerca\u2026');fire(0)}
+  const steps=allMode?stepsDeep:stepsStd;const delay=allMode?350:500;let i=0;
   const iv=setInterval(()=>{
     if(i<steps.length){
       const[s,m,r]=steps[i++];fire(s);
-      if(allMode){for(let k=0;k<nodes.length;k++)if(nodes[k].par===s||k===s)nodes[k].act=1}
-      say(r,m+(allMode?' \u00b7 deep':''));
+      say(r,m);
     }else{
       clearInterval(iv);
       (async()=>{
         let usedApi=false;
         if(window.wbApi&&wbApi.orchestrate){
           try{
-            say('Ricerca','multi-provider'+(allMode?' deep':'')+'\u2026');
+            say('Ricerca','fonti live\u2026');
             const r=await wbApi.orchestrate(prompt,{deep:allMode,search:true,attachments:atts.map(a=>a.name)});
             if(r.ok&&r.data){
               const body=formatSearchAnswer(prompt,nAgents,allMode,r.data.plan,r.data.search);
               const nRes=(r.data.search&&r.data.search.results&&r.data.search.results.length)||0;
-              showPanel(nRes?'Risposta · '+nRes+' fonti':'Risposta ricerca',body);
-              if(window.wbSaveConversation)wbSaveConversation(prompt,body);
-              say('Widow Blue',nRes?('risposta pronta · '+nRes+' fonti'):'ricerca completata (poche fonti)');
+              showPanel(nRes?'Risposta':'Risposta',body);
+              if(window.wbSaveConversation)wbSaveConversation(prompt,body.plain||body);
+              say('Widow Blue',nRes?'pronta':'completata');
               usedApi=true;
             }else if(r.data&&r.data.error){
-              say('Ricerca','errore API: '+(r.data.message||r.data.error));
+              say('Ricerca','errore: '+(r.data.message||r.data.error));
             }
-          }catch(e){say('Ricerca','fallback locale · '+String(e.message||e));}
+          }catch(e){say('Ricerca','fallback · '+String(e.message||e));}
         }
         if(!usedApi){
           try{
             if(window.wbApi&&wbApi.search){
               const sr=await wbApi.search(prompt,allMode);
-              if(sr.ok&&sr.data&&sr.data.results){
+              if(sr.ok&&sr.data){
                 const body=formatSearchAnswer(prompt,nAgents,allMode,null,sr.data);
-                showPanel('Risposta ricerca',body);
-                if(window.wbSaveConversation)wbSaveConversation(prompt,body);
-                say('Widow Blue','risposta da /api/search');
+                showPanel('Risposta',body);
+                if(window.wbSaveConversation)wbSaveConversation(prompt,body.plain||body);
+                say('Widow Blue','pronta');
                 usedApi=true;
               }
             }
@@ -156,8 +156,8 @@ function run(){
         if(!usedApi){
           const res=analyze(prompt,atts,allMode);
           showPanel(res.title,res.body);
-          if(window.wbSaveConversation)wbSaveConversation(prompt,res.body);
-          say('Widow Blue','piano locale (API non raggiungibile)');
+          if(window.wbSaveConversation)wbSaveConversation(prompt,res.body.plain||res.body);
+          say('Widow Blue','locale');
         }
         running=false;if(go)go.disabled=false;files.length=0;renderChips();
       })();
