@@ -74,7 +74,6 @@ function flashBtn(btn,okLabel){
   setTimeout(()=>{btn.textContent=orig},1600);
 }
 
-/** Risposta in chat: Copia + Condividi */
 function appendReply(body){
   const plain=typeof body==='object'?body.plain:String(body||'');
   const html=typeof body==='object'?body.html:null;
@@ -132,11 +131,30 @@ const langSel=document.getElementById('lang');LANGS.forEach(([v,l])=>{const o=do
 const bl=navigator.language||'it-IT';const m=LANGS.find(([v])=>v!=='auto'&&bl.toLowerCase().startsWith(v.slice(0,2).toLowerCase()));langSel.value=m?m[0]:'auto';
 let rec=null,listening=false;const voiceBtn=document.getElementById('voice');const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
 function currentLang(){const v=langSel.value;return v==='auto'?(navigator.language||'it-IT'):v}
-if(SR){rec=new SR();rec.interimResults=true;rec.continuous=false;rec.onresult=e=>{let final='';for(let i=e.resultIndex;i<e.results.length;i++){const t=e.results[i][0].transcript;if(e.results[i].isFinal)final+=t;else document.getElementById('q').placeholder=t}if(final){const q=document.getElementById('q');q.value=(q.value+' '+final).trim();q.placeholder='Continua la conversazione...'}};rec.onend=()=>{listening=false;voiceBtn.classList.remove('rec');voiceBtn.textContent='Voce'};rec.onerror=()=>{listening=false;voiceBtn.classList.remove('rec');voiceBtn.textContent='Voce';say('Voce','microfono non disponibile')}}
+function resolveUiLang(prompt){
+  const v=langSel.value;
+  if(v&&v!=='auto')return v.slice(0,2).toLowerCase();
+  const t=String(prompt||'');
+  if(/[àèéìòù]/i.test(t)||/\b(che|cosa|quando|dove|perché|perche|come|chi)\b/i.test(t))return 'it';
+  if(/\b(what|when|where|who|why|how)\b/i.test(t))return 'en';
+  if(/[ñ¿¡]/i.test(t)||/\b(qué|cuando|donde)\b/i.test(t))return 'es';
+  if(/[äöüß]/i.test(t)||/\b(was|wann|wie)\b/i.test(t))return 'de';
+  return (navigator.language||'it').slice(0,2).toLowerCase();
+}
+function labelsFor(lang){
+  const L={
+    it:{ans:'Risposta',src:'Fonti',plan:'Piano'},
+    en:{ans:'Answer',src:'Sources',plan:'Plan'},
+    es:{ans:'Respuesta',src:'Fuentes',plan:'Plan'},
+    fr:{ans:'Réponse',src:'Sources',plan:'Plan'},
+    de:{ans:'Antwort',src:'Quellen',plan:'Plan'},
+  };
+  return L[lang]||L.it;
+}
+if(SR){rec=new SR();rec.interimResults=true;rec.continuous=false;rec.onresult=e=>{let final='';for(let i=e.resultIndex;i<e.results.length;i++){const t=e.results[i][0].transcript;if(e.results[i].isFinal)final+=t;else document.getElementById('q').placeholder=t}if(final){const q=document.getElementById('q');q.value=(q.value+' '+final).trim();q.placeholder='Scrivi nella tua lingua...'}};rec.onend=()=>{listening=false;voiceBtn.classList.remove('rec');voiceBtn.textContent='Voce'};rec.onerror=()=>{listening=false;voiceBtn.classList.remove('rec');voiceBtn.textContent='Voce';say('Voce','microfono non disponibile')}}
 voiceBtn.onclick=()=>{if(!rec){say('Voce','Usa Chrome/Edge per la voce');return}if(listening){rec.stop();return}rec.lang=currentLang();listening=true;voiceBtn.classList.add('rec');voiceBtn.textContent='Ascolto\u2026';try{rec.start()}catch(e){listening=false;voiceBtn.classList.remove('rec');voiceBtn.textContent='Voce'}};
 document.getElementById('allAgents').onclick=function(){allMode=!allMode;this.textContent='Tutti gli agenti: '+(allMode?'s\u00ec':'no');this.classList.toggle('on',allMode);if(allMode){for(let i=0;i<nodes.length;i++)nodes[i].act=Math.max(nodes[i].act,.45);say('Rete','TUTTI GLI AGENTI ON')}else say('Rete','modalit\u00e0 standard')};
 
-/* Condividi intera conversazione */
 (function ensureShareThreadBtn(){
   if(document.getElementById('shareThread'))return;
   const btn=document.createElement('button');
@@ -164,28 +182,29 @@ function formatSearchAnswer(prompt,nAgents,deep,plan,search,conversation){
   const results=(search&&search.results)||[];
   const answer=search&&search.answer;
   const soft=isSoftwareRequest(prompt);
+  const lb=labelsFor(resolveUiLang(prompt));
   let plain='';
   let html='';
 
-  plain+='RISPOSTA\n';
-  html+='<div class="ans-h">Risposta</div>';
+  plain+=lb.ans.toUpperCase()+'\n';
+  html+='<div class="ans-h">'+esc(lb.ans)+'</div>';
   if(answer&&answer.text){
     plain+=answer.text+'\n';
     html+='<p class="ans-text">'+esc(answer.text)+'</p>';
   }else if(results.length){
     const best=results.find(r=>r.kind==='summary'&&r.snippet)||results[0];
-    const t=(best.snippet||'').slice(0,400);
+    const t=(best.snippet||'').slice(0,900);
     plain+=t+'\n';
     html+='<p class="ans-text">'+esc(t)+'</p>';
   }else{
-    plain+='Nessuna risposta trovata.\n';
-    html+='<p class="ans-text dim">Nessuna risposta trovata.</p>';
+    plain+='—\n';
+    html+='<p class="ans-text dim">—</p>';
   }
 
   const sources=results.filter(r=>r.url).slice(0,5);
   if(sources.length){
-    plain+='\nFONTI\n';
-    html+='<div class="ans-h">Fonti</div><ol class="ans-src">';
+    plain+='\n'+lb.src.toUpperCase()+'\n';
+    html+='<div class="ans-h">'+esc(lb.src)+'</div><ol class="ans-src">';
     sources.forEach((r,i)=>{
       const title=r.title||r.url;
       plain+=(i+1)+'. '+title+'\n   '+r.url+'\n';
@@ -195,24 +214,24 @@ function formatSearchAnswer(prompt,nAgents,deep,plan,search,conversation){
   }
 
   if(soft&&plan&&plan.stack&&plan.stack.length){
-    plain+='\nPIANO\n'+plan.stack.join(' · ')+'\n';
-    html+='<div class="ans-h">Piano</div><p class="ans-text">'+esc(plan.stack.join(' · '))+'</p>';
+    plain+='\n'+lb.plan.toUpperCase()+'\n'+plan.stack.join(' · ')+'\n';
+    html+='<div class="ans-h">'+esc(lb.plan)+'</div><p class="ans-text">'+esc(plan.stack.join(' · '))+'</p>';
   }
 
   const entity=(conversation&&conversation.entity)||(answer&&answer.title)||null;
-  return { plain, html, entity: entity ? String(entity).replace(/\s*\((IT|EN)\)\s*$/i,'').trim() : null };
+  return { plain, html, entity: entity ? String(entity).replace(/\s*\([A-Z]{2}\)\s*$/i,'').trim() : null };
 }
 
 function analyze(q){
   if(!isSoftwareRequest(q)){
-    return{plain:'Nessuna fonte live disponibile.',html:'<p class="ans-text dim">Nessuna fonte live disponibile.</p>',entity:null};
+    return{plain:'—',html:'<p class="ans-text dim">—</p>',entity:null};
   }
   const plain='Stack: Next.js + Tailwind · Cloudflare Workers';
   return{plain,html:'<p class="ans-text">'+esc(plain)+'</p>',entity:null};
 }
 
-const stepsStd=[[0,'Analizzo','Coordinatore'],[1,'Ricerca','Ricerca'],[0,'Sintesi','Coordinatore']];
-const stepsDeep=[[0,'Deep','Coordinatore'],[0,'Ricerca web','Ricerca'],[0,'Sintesi','Coordinatore']];
+const stepsStd=[[0,'…','Coordinatore'],[1,'…','Ricerca'],[0,'…','Coordinatore']];
+const stepsDeep=[[0,'…','Coordinatore'],[0,'…','Ricerca'],[0,'…','Coordinatore']];
 
 function showPanel(title,body){
   appendReply(typeof body==='object'?body:{plain:String(body||''),html:null});
@@ -254,7 +273,7 @@ window.wbLoadConversation=function(it){
     }
   }
   logEl.scrollTop=1e9;
-  say('Cronologia','conversazione ripresa — puoi continuare');
+  say('Cronologia','ok');
   document.getElementById('q').focus();
 };
 
@@ -270,19 +289,20 @@ if(pdl)pdl.onclick=()=>{};
 function run(){
   if(running)return;
   const q=document.getElementById('q').value.trim();
-  if(!q&&!files.length){say('Widow Blue','scrivi, parla o allega');return}
+  if(!q&&!files.length){say('Widow Blue','…');return}
   running=true;const go=document.getElementById('go');if(go)go.disabled=true;
-  const prompt=q||'(solo allegati)';const atts=files.slice();
+  const prompt=q||'(…)';const atts=files.slice();
   pushMemory('user',prompt,null);
   threadMessages.push({role:'user',text:prompt,at:Date.now()});
 
   const userDiv=document.createElement('div');userDiv.className='msg user';userDiv.textContent=prompt;
-  if(atts.length){const ad=document.createElement('div');ad.className='atts';ad.textContent='Allegati: '+atts.map(a=>a.name).join(', ');userDiv.appendChild(ad)}
+  if(atts.length){const ad=document.createElement('div');ad.className='atts';ad.textContent=atts.map(a=>a.name).join(', ');userDiv.appendChild(ad)}
   logEl.appendChild(userDiv);logEl.scrollTop=1e9;
 
   const hist=chatMemory.slice(-12).map(h=>({role:h.role,text:h.text,entity:h.entity}));
-  if(allMode){say('Coordinatore','ricerca approfondita\u2026');fireAll()}
-  else{say('Coordinatore','ricerca\u2026');fire(0)}
+  const uiLang=resolveUiLang(prompt);
+  if(allMode){say('Coordinatore','…');fireAll()}
+  else{say('Coordinatore','…');fire(0)}
 
   const steps=allMode?stepsDeep:stepsStd;const delay=allMode?300:420;let i=0;
   const iv=setInterval(()=>{
@@ -296,8 +316,8 @@ function run(){
         let body=null;
         if(window.wbApi&&wbApi.orchestrate){
           try{
-            say('Ricerca','web live\u2026');
-            const r=await wbApi.orchestrate(prompt,{deep:allMode,search:true,attachments:atts.map(a=>a.name),history:hist});
+            say('Ricerca','…');
+            const r=await wbApi.orchestrate(prompt,{deep:allMode,search:true,attachments:atts.map(a=>a.name),history:hist,lang:uiLang});
             if(r.ok&&r.data){
               body=formatSearchAnswer(prompt,nodes.length,allMode,r.data.plan,r.data.search,r.data.conversation);
               const ent=(r.data.conversation&&r.data.conversation.entity)||body.entity;
@@ -305,13 +325,13 @@ function run(){
               pushMemory('assistant',body.plain||'',ent);
               usedApi=true;
             }else if(r.data&&r.data.error){
-              say('Ricerca','errore: '+(r.data.message||r.data.error));
+              say('Ricerca',String(r.data.message||r.data.error));
             }
-          }catch(e){say('Ricerca','fallback · '+String(e.message||e));}
+          }catch(e){say('Ricerca',String(e.message||e));}
         }
         if(!usedApi&&window.wbApi&&wbApi.search){
           try{
-            const sr=await wbApi.search(prompt,allMode,hist);
+            const sr=await wbApi.search(prompt,allMode,hist,uiLang);
             if(sr.ok&&sr.data){
               body=formatSearchAnswer(prompt,nodes.length,allMode,null,sr.data,null);
               appendReply(body);
@@ -329,6 +349,7 @@ function run(){
           wbSaveConversation(prompt,body&&body.plain||'',threadMessages.slice());
         }
         running=false;if(go)go.disabled=false;files.length=0;renderChips();
+        logEl.scrollTop=1e9;
       })();
     }
   },delay);
