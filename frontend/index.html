@@ -13,12 +13,24 @@ canvas{position:fixed;inset:0;width:100%;height:100%;touch-action:none;cursor:gr
 .top p{margin:2px 0 0;font-size:14px;color:var(--dim)}
 .stat{position:fixed;right:56px;top:calc(12px + env(safe-area-inset-top,0px));text-align:right;font-size:14px;color:var(--dim);pointer-events:none;z-index:2}
 .stat b{display:block;font-size:30px;color:var(--am);font-weight:700;line-height:1}
-.bot{position:fixed;left:0;right:0;bottom:0;padding:10px 16px calc(10px + env(safe-area-inset-bottom,0px));background:linear-gradient(transparent,var(--bg) 30%);pointer-events:none;z-index:2}
+.bot{position:fixed;left:0;right:0;bottom:0;padding:10px 16px calc(10px + env(safe-area-inset-bottom,0px));background:linear-gradient(transparent,var(--bg) 28%);pointer-events:none;z-index:2}
 .bot>*{pointer-events:auto}
-#log{height:100px;overflow-y:auto;font-size:13px;line-height:1.35;display:flex;flex-direction:column;justify-content:flex-end;margin-bottom:6px;max-width:720px;margin-left:auto;margin-right:auto}
-#log .msg{margin:2px 0;padding:4px 8px;border-radius:6px;max-width:95%}
-#log .msg.user{background:rgba(77,225,255,.1);border:1px solid rgba(77,225,255,.25);align-self:flex-end}
-#log .msg.agent{color:var(--dim)}#log .msg.agent i{font-style:normal;color:var(--cy);font-weight:600}
+/* Chat continua: area più alta */
+#log{height:min(42vh,380px);overflow-y:auto;font-size:13px;line-height:1.35;display:flex;flex-direction:column;justify-content:flex-end;margin-bottom:6px;max-width:720px;margin-left:auto;margin-right:auto;scrollbar-width:thin;scrollbar-color:rgba(77,225,255,.3) transparent}
+#log .msg{margin:3px 0;padding:6px 10px;border-radius:8px;max-width:95%;word-break:break-word}
+#log .msg.user{background:rgba(77,225,255,.12);border:1px solid rgba(77,225,255,.3);align-self:flex-end}
+#log .msg.agent{color:var(--dim);align-self:flex-start}#log .msg.agent i{font-style:normal;color:var(--cy);font-weight:600}
+#log .msg.reply{align-self:flex-start;background:rgba(4,14,24,.92);border:1px solid rgba(77,225,255,.35);max-width:100%;padding:10px 12px}
+#log .msg.reply .ans-h{font-weight:700;color:var(--am);font-size:12px;letter-spacing:.04em;text-transform:uppercase;margin:0 0 6px}
+#log .msg.reply .ans-text{margin:0 0 8px;font-size:15px;line-height:1.45;color:var(--tx)}
+#log .msg.reply .ans-text.dim{color:var(--dim)}
+#log .msg.reply .ans-src{margin:0;padding-left:18px;font-size:12px}
+#log .msg.reply .ans-src li{margin:4px 0}
+#log .msg.reply .ans-src .prov{color:var(--dim)}
+#log .msg.reply a{color:var(--cy);text-decoration:underline;word-break:break-all}
+#log .msg.reply a:hover{color:var(--am)}
+#log .msg.reply .msg-actions{display:flex;gap:6px;margin-top:8px;padding-top:8px;border-top:1px solid rgba(77,225,255,.15)}
+#log .msg.reply .msg-actions button{height:28px;padding:0 10px;font-size:12px;border-radius:4px}
 #log .atts{font-size:11px;color:var(--am);margin-top:2px}
 #chips{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px;max-width:720px;margin-left:auto;margin-right:auto}
 .chip{font-size:12px;padding:3px 8px;border-radius:4px;background:rgba(77,225,255,.12);border:1px solid rgba(77,225,255,.35);cursor:pointer}
@@ -29,32 +41,22 @@ button{background:var(--cy);color:#04141c;border:0;border-radius:6px;font:700 15
 button.sec{background:transparent;color:var(--cy);border:1px solid rgba(77,225,255,.4)}
 button:disabled{opacity:.5}button.rec{border-color:#ff6b6b;color:#ff6b6b;animation:pulse 1s infinite}@keyframes pulse{50%{opacity:.6}}
 .plus{width:42px;padding:0;font-size:22px}
-#panel{display:none;position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);width:min(92vw,560px);max-height:70vh;overflow:auto;background:rgba(4,10,18,.96);border:1px solid rgba(77,225,255,.4);border-radius:10px;padding:16px;z-index:20}
-#panel h3{margin:0 0 10px;color:var(--cy)}
-#panel pre,#pbody{white-space:pre-wrap;font-size:14px;line-height:1.45;margin:0;font-family:Rajdhani,system-ui,sans-serif}
-#pbody.rich{white-space:normal}
-#pbody a{color:var(--cy);text-decoration:underline;word-break:break-all}
-#pbody a:hover{color:var(--am)}
-.ans-block{margin-bottom:14px}.ans-h{font-weight:700;color:var(--am);font-size:13px;letter-spacing:.04em;text-transform:uppercase;margin-bottom:6px}
-.ans-text{margin:0;font-size:16px;line-height:1.5;color:var(--tx)}.ans-text.dim{color:var(--dim)}
-.ans-src{margin:0;padding-left:18px}.ans-src li{margin:6px 0}.ans-src .prov{color:var(--dim);font-size:12px}
-#panel .actions{display:flex;gap:8px;margin-top:12px}#panel .actions button{height:36px;font-size:14px}
-#overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:15}
+#panel,#overlay{display:none!important}
 .toggle{font-size:12px;padding:4px 10px;border-radius:4px;border:1px solid rgba(77,225,255,.35);background:transparent;color:var(--dim);cursor:pointer;margin-bottom:4px}
 .toggle.on{color:var(--am);border-color:var(--am)}
 </style></head><body>
 <canvas id="c"></canvas>
-<div class="top"><h1>WIDOW BLUE</h1><p>Rete di agenti al lavoro. Trascina per ruotare.</p></div>
+<div class="top"><h1>WIDOW BLUE</h1><p>Chat continua · trascina per ruotare la rete</p></div>
 <div class="stat"><b id="n">0</b>attivi su <span id="t">432</span> agenti</div>
 <div class="bot">
-<div id="log"><div class="msg agent"><i>Widow Blue</i> pronta. Fai una domanda.</div></div>
+<div id="log"><div class="msg agent"><i>Widow Blue</i> pronta. Scrivi pure — le risposte restano in chat.</div></div>
 <button type="button" class="toggle" id="allAgents">Tutti gli agenti: no</button>
 <div id="chips"></div>
 <div class="row">
 <button class="plus sec" id="clip" type="button">+</button>
 <input type="file" id="file" multiple hidden accept="*/*">
 <select class="lang" id="lang" title="Lingua voce"></select>
-<input id="q" type="text" placeholder="Scrivi, parla o allega..." autocomplete="off">
+<input id="q" type="text" placeholder="Continua la conversazione..." autocomplete="off">
 <button class="sec" id="voice" type="button">Voce</button>
 <button id="go" type="button">Invia</button>
 </div></div>
