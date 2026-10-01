@@ -1,23 +1,30 @@
 /**
  * WidowBlue – ricerca web modulare multi-provider
  *
- * Sempre: wikipedia, duckduckgo
- * Opzionali (secret Cloudflare Pages):
- *   TAVILY_API_KEY        (1k crediti/mese, no carta)
- *   SERPER_API_KEY        (trial gratis ~2500 query)
- *   BRAVE_API_KEY
- *   GOOGLE_API_KEY + GOOGLE_CSE_ID
- *   BING_API_KEY
- *   PERPLEXITY_API_KEY
+ * Sempre: wikipedia (it+en), duckduckgo
+ * Opzionali: TAVILY, SERPER, BRAVE, GOOGLE, BING, PERPLEXITY
  */
 
-const UA = 'WidowBlueBot/0.4 (+https://github.com/damon969gin-droid/Widowblue-D24GON; research; respectful)';
+const UA = 'WidowBlueBot/0.5 (+https://github.com/damon969gin-droid/Widowblue-D24GON; research; respectful)';
 const TIMEOUT_MS = 10000;
+
+/** Rimuove prefissi tipo "cos è", "what is" per migliorare match su Wiki/DDG */
+function normalizeQuery(q) {
+  const cleaned = String(q || '')
+    .trim()
+    .replace(/^(che\s+)?cos[''\u2019]?\s*[eè]\s+/i, '')
+    .replace(/^cosa\s+(è|e)\s+/i, '')
+    .replace(/^(what\s+is|who\s+is|how\s+does)\s+/i, '')
+    .replace(/\?+$/g, '')
+    .trim();
+  return cleaned || String(q || '').trim();
+}
 
 export async function modularSearch(query, opts = {}) {
   const q = String(query || '').trim().slice(0, 300);
   if (!q) return { ok: false, error: 'empty_query', results: [], providers: [] };
 
+  const qNorm = normalizeQuery(q);
   const deep = !!opts.deep;
   const env = opts.env || {};
   const providers = [];
@@ -25,8 +32,8 @@ export async function modularSearch(query, opts = {}) {
   const errors = [];
 
   const jobs = [
-    runProvider('wikipedia', () => searchWikipedia(q)),
-    runProvider('duckduckgo', () => searchDuckDuckGo(q)),
+    runProvider('wikipedia', () => searchWikipedia(q, qNorm)),
+    runProvider('duckduckgo', () => searchDuckDuckGo(qNorm || q)),
   ];
 
   if (env.TAVILY_API_KEY) {
@@ -69,6 +76,7 @@ export async function modularSearch(query, opts = {}) {
   return {
     ok: true,
     query: q,
+    queryNormalized: qNorm,
     deep,
     providers,
     errors,
@@ -77,8 +85,8 @@ export async function modularSearch(query, opts = {}) {
       respectful: true,
       notes: [
         'Solo API ufficiali (no scraping SERP)',
-        'Rispetta quote e ToS di ogni provider',
-        'Nessun bypass paywall/CAPTCHA',
+        'Wikipedia: it.wikipedia + en.wikipedia',
+        'DuckDuckGo Instant Answer è limitato; Tavily/Serper danno più risultati',
         'Tracciabilità: provider + url su ogni item',
       ],
     },
@@ -103,27 +111,73 @@ function withTimeout(promise, ms) {
   ]);
 }
 
-async function searchWikipedia(q) {
+async function wikiOpenSearch(lang, term) {
   const url =
-    'https://en.wikipedia.org/w/api.php?action=opensearch&limit=5&namespace=0&format=json&origin=*&search=' +
-    encodeURIComponent(q);
+    'https://' +
+    lang +
+    '.wikipedia.org/w/api.php?action=opensearch&limit=5&namespace=0&format=json&origin=*&search=' +
+    encodeURIComponent(term);
   const res = await fetch(url, { headers: { 'User-Agent': UA, Accept: 'application/json' } });
-  if (!res.ok) throw new Error('wikipedia HTTP ' + res.status);
+  if (!res.ok) throw new Error('wikipedia-' + lang + ' HTTP ' + res.status);
   const data = await res.json();
   const titles = data[1] || [];
   const descs = data[2] || [];
   const urls = data[3] || [];
   return titles.map((title, i) => ({
     provider: 'wikipedia',
-    title,
+    title: title + (lang === 'it' ? ' (IT)' : ''),
     url: urls[i] || '',
     snippet: descs[i] || '',
     fetchedAt: Date.now(),
   }));
 }
 
+/** Wikipedia search API (list=search) + extract snippet */
+async function wikiListSearch(lang, term) {
+  const searchUrl =
+    'https://' +
+    lang +
+    '.wikipedia.org/w/api.php?action=query&list=search&srlimit=5&format=json&origin=*&srsearch=' +
+    encodeURIComponent(term);
+  const res = await fetch(searchUrl, { headers: { 'User-Agent': UA, Accept: 'application/json' } });
+  if (!res.ok) throw new Error('wikipedia-list-' + lang + ' HTTP ' + res.status);
+  const data = await res.json();
+  const hits = (data.query && data.query.search) || [];
+  return hits.map((h) => ({
+    provider: 'wikipedia',
+    title: h.title + (lang === 'it' ? ' (IT)' : ''),
+    url: 'https://' + lang + '.wikipedia.org/wiki/' + encodeURIComponent(h.title.replace(/ /g, '_')),
+    snippet: (h.snippet || '').replace(/<[^>]+>/g, ''),
+    fetchedAt: Date.now(),
+  }));
+}
+
+async function searchWikipedia(q, qNorm) {
+  const terms = [...new Set([qNorm, q].filter(Boolean))];
+  const jobs = [];
+  for (const term of terms) {
+    jobs.push(wikiOpenSearch('it', term));
+    jobs.push(wikiOpenSearch('en', term));
+    jobs.push(wikiListSearch('it', term));
+    jobs.push(wikiListSearch('en', term));
+  }
+  const parts = await Promise.all(jobs.map((p) => p.catch(() => [])));
+  const out = [];
+  const seen = new Set();
+  for (const arr of parts) {
+    for (const r of arr) {
+      const k = (r.url || r.title).toLowerCase();
+      if (seen.has(k)) continue;
+      seen.add(k);
+      out.push(r);
+    }
+  }
+  return out.slice(0, 10);
+}
+
 async function searchDuckDuckGo(q) {
-  const url = 'https://api.duckduckgo.com/?format=json&no_html=1&skip_disambig=1&q=' + encodeURIComponent(q);
+  const url =
+    'https://api.duckduckgo.com/?format=json&no_html=1&skip_disambig=1&q=' + encodeURIComponent(q);
   const res = await fetch(url, { headers: { 'User-Agent': UA, Accept: 'application/json' } });
   if (!res.ok) throw new Error('duckduckgo HTTP ' + res.status);
   const data = await res.json();
@@ -134,6 +188,15 @@ async function searchDuckDuckGo(q) {
       title: data.Heading || q,
       url: data.AbstractURL || '',
       snippet: data.AbstractText,
+      fetchedAt: Date.now(),
+    });
+  }
+  if (data.Definition) {
+    out.push({
+      provider: 'duckduckgo',
+      title: data.Heading || 'Definition',
+      url: data.DefinitionURL || data.AbstractURL || '',
+      snippet: data.Definition,
       fetchedAt: Date.now(),
     });
   }
@@ -148,7 +211,7 @@ async function searchDuckDuckGo(q) {
       });
     }
     if (item.Topics) {
-      for (const t of item.Topics.slice(0, 3)) {
+      for (const t of item.Topics.slice(0, 4)) {
         if (t.Text && t.FirstURL) {
           out.push({
             provider: 'duckduckgo',
@@ -161,10 +224,9 @@ async function searchDuckDuckGo(q) {
       }
     }
   }
-  return out.slice(0, 8);
+  return out.slice(0, 10);
 }
 
-/** Tavily – free 1k credits/month, no card */
 async function searchTavily(q, apiKey, deep) {
   const res = await fetch('https://api.tavily.com/search', {
     method: 'POST',
@@ -209,7 +271,6 @@ async function searchTavily(q, apiKey, deep) {
   return out;
 }
 
-/** Serper – Google SERP JSON, trial gratuito */
 async function searchSerper(q, apiKey, num = 5) {
   const res = await fetch('https://google.serper.dev/search', {
     method: 'POST',
