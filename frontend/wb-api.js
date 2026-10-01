@@ -1,4 +1,4 @@
-/* WidowBlue API client – auth, search, orchestrate + history */
+/* WidowBlue API client – auth, search, orchestrate + history + lang */
 (function () {
   const API = '';
 
@@ -25,10 +25,15 @@
     timedKey: (token) =>
       api('/api/auth/timed-key', { method: 'POST', headers: { Authorization: 'Bearer ' + token } }),
 
-    search: (query, deep, history) =>
+    search: (query, deep, history, lang) =>
       api('/api/search', {
         method: 'POST',
-        body: JSON.stringify({ query, deep: !!deep, history: history || [] }),
+        body: JSON.stringify({
+          query,
+          deep: !!deep,
+          history: history || [],
+          lang: lang || 'auto',
+        }),
       }),
 
     orchestrate: (prompt, opts) =>
@@ -40,6 +45,7 @@
           search: opts && opts.search === false ? false : true,
           attachments: (opts && opts.attachments) || [],
           history: (opts && opts.history) || [],
+          lang: (opts && opts.lang) || 'auto',
         }),
       }),
   };
