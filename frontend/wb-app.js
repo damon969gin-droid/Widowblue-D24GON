@@ -1,4 +1,18 @@
 const logEl=document.getElementById('log'),files=[];let lastResult='';
+/** Memoria conversazione: continua il discorso tra un messaggio e l'altro */
+const chatMemory=[];
+const MAX_MEMORY=20;
+
+function pushMemory(role,text,entity){
+  chatMemory.push({role,text:String(text||'').slice(0,500),entity:entity||null,at:Date.now()});
+  while(chatMemory.length>MAX_MEMORY)chatMemory.shift();
+  try{localStorage.setItem('wb_chat_memory',JSON.stringify(chatMemory.slice(-12)))}catch(e){}
+}
+try{
+  const saved=JSON.parse(localStorage.getItem('wb_chat_memory')||'[]');
+  if(Array.isArray(saved))saved.forEach(x=>chatMemory.push(x));
+}catch(e){}
+
 function say(role,txt,cls){const d=document.createElement('div');d.className='msg '+(cls||'agent');if(cls==='user')d.textContent=txt;else d.innerHTML='<i>'+role+'</i> '+txt;logEl.appendChild(d);logEl.scrollTop=1e9;while(logEl.children.length>40)logEl.removeChild(logEl.firstChild)}
 function fire(i){if(i<0||i>=nodes.length)return;const n=nodes[i];n.act=1;pulses.push({from:-1,to:i,t:0});(n.kids||[]).forEach((k,j)=>setTimeout(()=>{if(!nodes[k])return;nodes[k].act=1;pulses.push({from:i,to:k,t:0});const sib=(nodes[i].kids||[]).filter(id=>id!==k&&nodes[id]&&nodes[id].act>.3);if(sib.length){const other=sib[j%sib.length];pulses.push({from:k,to:other,t:0});nodes[other].act=Math.max(nodes[other].act,.7)}},j*12))}
 function fireAll(){for(let i=0;i<nodes.length;i++)nodes[i].act=1;for(let i=0;i<12;i++)setTimeout(()=>fire(i),i*50);for(let e=0;e<Math.min(EDGE.length,200);e+=3){const[a,b]=EDGE[e];setTimeout(()=>pulses.push({from:a,to:b,t:0}),80+(e%40)*8)}}
@@ -28,16 +42,13 @@ function linkHtml(url,label){
   return '<a href="'+esc(url)+'" target="_blank" rel="noopener noreferrer">'+esc(label||url)+'</a>';
 }
 
-/** Risposta pulita: solo risposta + fonti cliccabili */
-function formatSearchAnswer(prompt,nAgents,deep,plan,search){
+function formatSearchAnswer(prompt,nAgents,deep,plan,search,conversation){
   const results=(search&&search.results)||[];
   const answer=search&&search.answer;
   const soft=isSoftwareRequest(prompt);
-
   let plain='';
   let html='';
 
-  // --- RISPOSTA ---
   plain+='RISPOSTA\n';
   html+='<div class="ans-block"><div class="ans-h">Risposta</div>';
   if(answer&&answer.text){
@@ -54,7 +65,6 @@ function formatSearchAnswer(prompt,nAgents,deep,plan,search){
   }
   html+='</div>';
 
-  // --- FONTI (max 5, link cliccabili) ---
   const sources=results.filter(r=>r.url).slice(0,5);
   if(sources.length){
     plain+='\nFONTI\n';
@@ -67,23 +77,22 @@ function formatSearchAnswer(prompt,nAgents,deep,plan,search){
     html+='</ol></div>';
   }
 
-  // Piano solo se richiesta software esplicita
   if(soft&&plan&&plan.stack&&plan.stack.length){
     plain+='\nPIANO PROGETTO\nStack: '+plan.stack.join(' · ')+'\n';
     html+='<div class="ans-block"><div class="ans-h">Piano progetto</div><p>'+esc(plan.stack.join(' · '))+'</p></div>';
   }
 
-  return { plain, html };
+  const entity=(conversation&&conversation.entity)||(answer&&answer.title)||null;
+  return { plain, html, entity: entity ? String(entity).replace(/\s*\((IT|EN)\)\s*$/i,'').trim() : null };
 }
 
 function analyze(q,atts,deep){
-  const ql=q.toLowerCase();
   if(!isSoftwareRequest(q)){
-    return{title:'Risposta',body:{plain:'Nessuna fonte live disponibile. Riprova o configura Tavily/Serper.',html:'<p class="ans-text dim">Nessuna fonte live disponibile.</p>'}};
+    return{title:'Risposta',body:{plain:'Nessuna fonte live disponibile.',html:'<p class="ans-text dim">Nessuna fonte live disponibile.</p>'},entity:null};
   }
   const stack=['Next.js + Tailwind','Cloudflare Workers'];
   const plain='RICHIESTA\n'+q+'\n\nSTACK\n- '+stack.join('\n- ');
-  return{title:'Piano',body:{plain,html:'<pre>'+esc(plain)+'</pre>'}};
+  return{title:'Piano',body:{plain,html:'<pre>'+esc(plain)+'</pre>'},entity:null};
 }
 const stepsStd=[[0,'Analizzo','Coordinatore'],[1,'Ricerca','Ricerca'],[0,'Sintesi','Coordinatore']];
 const stepsDeep=[[0,'Deep sweep','Coordinatore'],[0,'Ricerca multi-fonte','Ricerca'],[0,'Sintesi','Coordinatore']];
@@ -108,10 +117,12 @@ function run(){
   if(!q&&!files.length){say('Widow Blue','scrivi, parla o allega');return}
   running=true;const go=document.getElementById('go');if(go)go.disabled=true;
   const prompt=q||'(solo allegati)';const atts=files.slice();
+  pushMemory('user',prompt,null);
   const userDiv=document.createElement('div');userDiv.className='msg user';userDiv.textContent=prompt;
   if(atts.length){const ad=document.createElement('div');ad.className='atts';ad.textContent='Allegati: '+atts.map(a=>a.name).join(', ');userDiv.appendChild(ad)}
   logEl.appendChild(userDiv);logEl.scrollTop=1e9;
   const nAgents=nodes.length;
+  const hist=chatMemory.slice(-12).map(h=>({role:h.role,text:h.text,entity:h.entity}));
   if(allMode){say('Coordinatore','ricerca approfondita\u2026');fireAll()}
   else{say('Coordinatore','ricerca\u2026');fire(0)}
   const steps=allMode?stepsDeep:stepsStd;const delay=allMode?350:500;let i=0;
@@ -126,11 +137,13 @@ function run(){
         if(window.wbApi&&wbApi.orchestrate){
           try{
             say('Ricerca','fonti live\u2026');
-            const r=await wbApi.orchestrate(prompt,{deep:allMode,search:true,attachments:atts.map(a=>a.name)});
+            const r=await wbApi.orchestrate(prompt,{deep:allMode,search:true,attachments:atts.map(a=>a.name),history:hist});
             if(r.ok&&r.data){
-              const body=formatSearchAnswer(prompt,nAgents,allMode,r.data.plan,r.data.search);
+              const body=formatSearchAnswer(prompt,nAgents,allMode,r.data.plan,r.data.search,r.data.conversation);
               const nRes=(r.data.search&&r.data.search.results&&r.data.search.results.length)||0;
-              showPanel(nRes?'Risposta':'Risposta',body);
+              showPanel('Risposta',body);
+              const ent=(r.data.conversation&&r.data.conversation.entity)||body.entity;
+              pushMemory('assistant',body.plain||'',ent);
               if(window.wbSaveConversation)wbSaveConversation(prompt,body.plain||body);
               say('Widow Blue',nRes?'pronta':'completata');
               usedApi=true;
@@ -142,10 +155,11 @@ function run(){
         if(!usedApi){
           try{
             if(window.wbApi&&wbApi.search){
-              const sr=await wbApi.search(prompt,allMode);
+              const sr=await wbApi.search(prompt,allMode,hist);
               if(sr.ok&&sr.data){
-                const body=formatSearchAnswer(prompt,nAgents,allMode,null,sr.data);
+                const body=formatSearchAnswer(prompt,nAgents,allMode,null,sr.data,null);
                 showPanel('Risposta',body);
+                pushMemory('assistant',body.plain||'',body.entity);
                 if(window.wbSaveConversation)wbSaveConversation(prompt,body.plain||body);
                 say('Widow Blue','pronta');
                 usedApi=true;
@@ -156,6 +170,7 @@ function run(){
         if(!usedApi){
           const res=analyze(prompt,atts,allMode);
           showPanel(res.title,res.body);
+          pushMemory('assistant',res.body.plain||'',null);
           if(window.wbSaveConversation)wbSaveConversation(prompt,res.body.plain||res.body);
           say('Widow Blue','locale');
         }
