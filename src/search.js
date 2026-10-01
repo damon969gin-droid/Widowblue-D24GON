@@ -1,9 +1,9 @@
 /**
  * WidowBlue – ricerca web modulare multi-provider
- * Wikipedia: ranking + REST summary (risposte utili senza API a pagamento)
+ * Risposte focalizzate: es. data di nascita da Wikipedia summary
  */
 
-const UA = 'WidowBlueBot/0.6 (+https://github.com/damon969gin-droid/Widowblue-D24GON; research; respectful)';
+const UA = 'WidowBlueBot/0.7 (+https://github.com/damon969gin-droid/Widowblue-D24GON; research; respectful)';
 const TIMEOUT_MS = 12000;
 
 function normalizeQuery(q) {
@@ -39,19 +39,62 @@ function scoreResult(r, qTokens) {
   const sn = (r.snippet || '').toLowerCase();
   let score = 0;
   for (const t of qTokens) {
-    if (title.includes(t)) score += 8;
+    if (title.includes(t)) score += 10;
     if (sn.includes(t)) score += 2;
   }
-  // prefer exact-ish title match
-  if (qTokens.length && qTokens.every((t) => title.includes(t))) score += 20;
-  // prefer short titles (entity pages)
-  if (title.length < 40) score += 3;
-  // boost wikipedia summaries
-  if (r.kind === 'summary') score += 15;
-  if (r.provider === 'tavily' || r.provider === 'perplexity' || r.provider === 'serper') score += 5;
-  // penalize disambiguation / painter / football noise lightly when query has person tokens
-  if (/disambigua|disambiguation/i.test(title + sn)) score -= 15;
+  if (qTokens.length && qTokens.every((t) => title.includes(t))) score += 25;
+  if (title.length < 45) score += 4;
+  if (r.kind === 'summary') score += 20;
+  if (r.provider === 'tavily' || r.provider === 'perplexity' || r.provider === 'serper') score += 6;
+  if (/disambigua|disambiguation/i.test(title + sn)) score -= 25;
+  if (/procaccini|pittore|painter|atalanta|calcio|football/i.test(title + sn)) score -= 10;
   return score;
+}
+
+/** Estrae risposta corta e diretta dalla query + testo fonte */
+function focusAnswer(query, text, title) {
+  const ql = String(query || '').toLowerCase();
+  const t = String(text || '');
+  const name = String(title || '').replace(/\s*\((IT|EN)\)\s*$/i, '').trim();
+
+  // Nascita / when born
+  if (/nato|nascita|\bborn\b|when was|data di nascita/i.test(ql)) {
+    const patterns = [
+      /nato(?:\s+a)?\s+[^.]{5,90}/i,
+      /nata(?:\s+a)?\s+[^.]{5,90}/i,
+      /born\s+(?:on\s+)?[^.]{5,90}/i,
+      /\([^)]*?\d{1,2}\s+[a-zà-ù.]+\s+\d{1,4}\s*a\.?\s*C\.?[^)]*\)/i,
+      /\([^)]*?\d{1,4}\s*(?:BC|a\.?\s*C\.?)[^)]*\)/i,
+      /,\s*\d{1,2}\s+[A-Za-zà-ù.]+\s+\d{1,4}\s*a\.?\s*C\.?/i,
+      /\d{1,2}\s+(?:gennaio|febbraio|marzo|aprile|maggio|giugno|luglio|agosto|settembre|ottobre|novembre|dicembre)\s+\d{1,4}\s*a\.?\s*C\.?/i,
+      /\d{1,2}\s+(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,4}\s*(?:BC)?/i,
+    ];
+    for (const re of patterns) {
+      const m = t.match(re);
+      if (m) {
+        let bit = m[0].replace(/^[,\s(]+|[)\s.]+$/g, '').trim();
+        if (/^nato|^nata|^born/i.test(bit)) {
+          return name + ' è ' + bit + '.';
+        }
+        return name + ' è nato il ' + bit + '.';
+      }
+    }
+  }
+
+  // Chi è / cos'è → prima frase
+  if (/^chi\s|^cos|^what is|^who is/i.test(ql)) {
+    const first = t.split(/(?<=[.!?])\s+/)[0];
+    if (first && first.length > 20) return first.trim();
+  }
+
+  // Default: prime 2 frasi max ~350 char
+  const sentences = t.split(/(?<=[.!?])\s+/).filter(Boolean);
+  let out = '';
+  for (const s of sentences.slice(0, 2)) {
+    if ((out + ' ' + s).length > 380) break;
+    out = out ? out + ' ' + s : s;
+  }
+  return out || t.slice(0, 350);
 }
 
 export async function modularSearch(query, opts = {}) {
@@ -109,14 +152,18 @@ export async function modularSearch(query, opts = {}) {
     unique.push(r);
   }
   unique.sort((a, b) => (b._score || 0) - (a._score || 0));
-  unique = unique.slice(0, deep ? 40 : 15);
+  // Per domande fattuali: poche fonti di qualità
+  const maxRes = deep ? 8 : 5;
+  unique = unique.slice(0, maxRes);
 
-  // Answer: best summary / extract first
   let answer = null;
-  const top = unique.find((r) => r.kind === 'summary' && r.snippet) || unique.find((r) => r.snippet && r.snippet.length > 40);
+  const top =
+    unique.find((r) => r.kind === 'summary' && r.snippet && (r._score || 0) > 5) ||
+    unique.find((r) => r.snippet && r.snippet.length > 40);
   if (top) {
+    const focused = focusAnswer(q, top.snippet, top.title);
     answer = {
-      text: top.snippet.slice(0, 700),
+      text: focused,
       title: top.title,
       url: top.url,
       provider: top.provider,
@@ -134,11 +181,7 @@ export async function modularSearch(query, opts = {}) {
     results: unique.map(({ _score, ...rest }) => rest),
     policy: {
       respectful: true,
-      notes: [
-        'Wikipedia IT+EN + summary REST',
-        'Ranking per rilevanza titolo/query',
-        'Tavily/Serper migliorano le risposte fattuali',
-      ],
+      notes: ['Risposta focalizzata + fonti tracciate', 'Wikipedia summary REST'],
     },
     fetchedAt: Date.now(),
   };
@@ -205,7 +248,6 @@ async function wikiListSearch(lang, term) {
   }));
 }
 
-/** Summary REST: extract leggibile (nascita, biografia, ecc.) */
 async function wikiSummary(lang, title) {
   const url =
     'https://' +
@@ -224,7 +266,8 @@ async function wikiSummary(lang, title) {
     provider: 'wikipedia',
     kind: 'summary',
     title: (data.title || title) + (lang === 'it' ? ' (IT)' : ''),
-    url: (data.content_urls && data.content_urls.desktop && data.content_urls.desktop.page) ||
+    url:
+      (data.content_urls && data.content_urls.desktop && data.content_urls.desktop.page) ||
       'https://' + lang + '.wikipedia.org/wiki/' + encodeURIComponent(title.replace(/ /g, '_')),
     snippet: extract,
     lang,
@@ -256,7 +299,6 @@ async function searchWikipedia(q, qNorm, qTokens) {
   }
   out.sort((a, b) => (b._score || 0) - (a._score || 0));
 
-  // Enrich top 3 with full extract
   const top = out.slice(0, 4);
   const summaries = await Promise.all(
     top.map((r) =>
@@ -280,7 +322,7 @@ async function searchWikipedia(q, qNorm, qTokens) {
     seen2.add(k);
     enriched.push(r);
   }
-  return enriched.slice(0, 12);
+  return enriched.slice(0, 10);
 }
 
 async function searchDuckDuckGo(q) {
@@ -319,21 +361,8 @@ async function searchDuckDuckGo(q) {
         fetchedAt: Date.now(),
       });
     }
-    if (item.Topics) {
-      for (const t of item.Topics.slice(0, 4)) {
-        if (t.Text && t.FirstURL) {
-          out.push({
-            provider: 'duckduckgo',
-            title: (t.Text || '').slice(0, 80),
-            url: t.FirstURL,
-            snippet: t.Text,
-            fetchedAt: Date.now(),
-          });
-        }
-      }
-    }
   }
-  return out.slice(0, 10);
+  return out.slice(0, 6);
 }
 
 async function searchTavily(q, apiKey, deep) {
@@ -348,7 +377,7 @@ async function searchTavily(q, apiKey, deep) {
       api_key: apiKey,
       query: q,
       search_depth: deep ? 'advanced' : 'basic',
-      max_results: deep ? 10 : 5,
+      max_results: deep ? 8 : 5,
       include_answer: true,
       include_raw_content: false,
     }),
@@ -547,7 +576,7 @@ async function searchPerplexity(q, apiKey, deep) {
   const out = [];
   const cites = data.citations || data.search_results || [];
   if (Array.isArray(cites)) {
-    for (const c of cites.slice(0, deep ? 12 : 6)) {
+    for (const c of cites.slice(0, deep ? 8 : 5)) {
       if (typeof c === 'string') {
         out.push({
           provider: 'perplexity',
