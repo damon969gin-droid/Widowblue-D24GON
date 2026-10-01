@@ -1,6 +1,5 @@
-/* WidowBlue Auth + History + Admin (client prototype)
- * Production: move to Cloudflare Workers + D1, Argon2id+pepper, MFA TOTP.
- * Superadmin email: giorgi.daniele96@gmail.com
+/* WidowBlue Auth + History + Admin (client)
+ * Superadmin: giorgi.daniele96@gmail.com
  */
 (function () {
   const ADMIN_EMAIL = 'giorgi.daniele96@gmail.com';
@@ -24,7 +23,7 @@
     try { return JSON.parse(localStorage.getItem(histKey(email)) || '[]'); } catch (e) { return []; }
   }
   function saveHist(email, list) {
-    localStorage.setItem(histKey(email), JSON.stringify(list.slice(0, 100)));
+    localStorage.setItem(histKey(email), JSON.stringify(list.slice(0, 80)));
   }
 
   async function hashPass(password, saltB64) {
@@ -112,6 +111,7 @@
       <h3>Menu</h3>
       <div id="wb-drawer-user" style="font-size:13px;color:#5f8296;margin-bottom:12px"></div>
       <h3>Cronologia</h3>
+      <p style="font-size:12px;color:#5f8296;margin:0 0 8px">Tocca una chat per riprenderla e continuare a scrivere.</p>
       <div id="wb-hist-list"></div>
       <div class="actions">
         <button type="button" class="act pri" id="wb-btn-login">Accedi / Registrati</button>
@@ -126,7 +126,7 @@
     auth.innerHTML = `
       <div class="box">
         <h2 id="wb-auth-title">Accedi</h2>
-        <p class="note">Prototype locale. In produzione: backend + Argon2id + pepper + MFA (Google/Microsoft Authenticator).</p>
+        <p class="note">Registrati per salvare la cronologia sul dispositivo.</p>
         <label>Email</label>
         <input type="email" id="wb-email" autocomplete="username">
         <label>Password (min 12 caratteri)</label>
@@ -145,23 +145,17 @@
     admin.innerHTML = `
       <div class="box">
         <h2>Dashboard sicurezza</h2>
-        <p class="note">Solo superadmin: ${ADMIN_EMAIL}. Allineata a NIS2 — vedi docs/SECURITY.md</p>
+        <p class="note">Solo superadmin: ${ADMIN_EMAIL}</p>
         <div class="sec-block">
-          <h4>Chiave alfanumerica temporizzata</h4>
-          <p class="note">Valida ~60 secondi. Usala per operazioni critiche / elevazione privilegi.</p>
+          <h4>Chiave temporizzata</h4>
           <button type="button" id="wb-gen-key" style="background:#4de1ff;color:#04141c;border:0;height:36px;border-radius:6px;padding:0 12px;cursor:pointer;font:700 13px Rajdhani">Genera chiave</button>
           <p style="margin-top:8px"><code id="wb-timed-key">—</code></p>
           <p class="note" id="wb-key-ttl"></p>
         </div>
         <div class="sec-block">
-          <h4>Spider Control / Alert</h4>
-          <p class="note">Monitoraggio ricerca, brute-force, anomalie API.</p>
+          <h4>Spider Alert</h4>
           <button type="button" id="wb-sim-spider" style="background:transparent;color:#ff6b6b;border:1px solid #ff6b6b;height:36px;border-radius:6px;padding:0 12px;cursor:pointer;font:700 13px Rajdhani">Simula alert</button>
           <ul id="wb-spider-log" style="font-size:12px;color:#cfeaf5;padding-left:18px"></ul>
-        </div>
-        <div class="sec-block">
-          <h4>Controlli NIS2 (target)</h4>
-          <p class="note">MFA TOTP · Salt+Pepper · E2E · AWS/CF KMS · Backup 3-2-1 · WAF · Audit log · Passkeys</p>
         </div>
         <div class="rowbtn">
           <button type="button" id="wb-admin-close" style="background:transparent;color:#4de1ff;border:1px solid rgba(77,225,255,.4)">Chiudi</button>
@@ -189,8 +183,8 @@
     document.getElementById('wb-do-register').onclick = doRegister;
     document.getElementById('wb-gen-key').onclick = genTimedKey;
     document.getElementById('wb-sim-spider').onclick = () => {
-      pushSpider('Simulated probe on /search — rate limited');
-      showSpiderBanner('Spider Alert: attività sospetta su ricerca');
+      pushSpider('Simulated probe on /search');
+      showSpiderBanner('Spider Alert: attività sospetta');
     };
 
     refreshChip();
@@ -211,7 +205,7 @@
   function refreshDrawer() {
     const s = session();
     const u = document.getElementById('wb-drawer-user');
-    u.textContent = s ? ('Account: ' + s.email + (isAdmin(s.email) ? ' · SUPERADMIN' : '')) : 'Non autenticato (ospite)';
+    u.textContent = s ? ('Account: ' + s.email + (isAdmin(s.email) ? ' · SUPERADMIN' : '')) : 'Ospite (cronologia locale)';
     document.getElementById('wb-btn-logout').style.display = s ? 'block' : 'none';
     document.getElementById('wb-btn-admin').style.display = s && isAdmin(s.email) ? 'block' : 'none';
     document.getElementById('wb-btn-login').style.display = s ? 'none' : 'block';
@@ -226,7 +220,14 @@
     items.forEach((it, idx) => {
       const row = document.createElement('div');
       row.className = 'item';
-      row.innerHTML = `<div class="meta">${escapeHtml(it.title || it.prompt || 'Chat')}<small>${new Date(it.ts).toLocaleString()}</small></div>`;
+      const nMsg = (it.messages && it.messages.length) || 0;
+      row.innerHTML =
+        '<div class="meta">' +
+        escapeHtml(it.title || it.prompt || 'Chat') +
+        '<small>' +
+        new Date(it.ts).toLocaleString() +
+        (nMsg ? ' · ' + nMsg + ' messaggi' : '') +
+        '</small></div>';
       const del = document.createElement('button');
       del.className = 'del';
       del.type = 'button';
@@ -247,7 +248,11 @@
   }
 
   function escapeHtml(t) {
-    return String(t).replace(/[&<>"']/g, c => ({ '&': '&', '<': '<', '>': '>', '"': '"', "'": '&#39;' }[c]));
+    return String(t)
+      .replace(/&/g, '&')
+      .replace(/</g, '<')
+      .replace(/>/g, '>')
+      .replace(/"/g, '"');
   }
 
   async function doRegister() {
@@ -313,7 +318,10 @@
     spiderEvents.unshift({ t: Date.now(), msg });
     const ul = document.getElementById('wb-spider-log');
     if (ul) {
-      ul.innerHTML = spiderEvents.slice(0, 8).map(e => '<li>' + new Date(e.t).toLocaleTimeString() + ' — ' + escapeHtml(e.msg) + '</li>').join('');
+      ul.innerHTML = spiderEvents
+        .slice(0, 8)
+        .map((e) => '<li>' + new Date(e.t).toLocaleTimeString() + ' — ' + escapeHtml(e.msg) + '</li>')
+        .join('');
     }
   }
   function showSpiderBanner(text) {
@@ -321,27 +329,47 @@
     if (!el) return;
     el.style.display = 'block';
     el.textContent = text;
-    setTimeout(() => { el.style.display = 'none'; }, 6000);
+    setTimeout(() => {
+      el.style.display = 'none';
+    }, 6000);
   }
 
-  /** Called from main app when a conversation completes */
-  window.wbSaveConversation = function (prompt, result) {
+  /** Salva thread completo (messaggi) per ripresa continua */
+  window.wbSaveConversation = function (prompt, result, messages) {
     const s = session();
     const email = s && s.email;
     const list = loadHist(email);
+    const msgs = Array.isArray(messages)
+      ? messages.map((m) => ({
+          role: m.role,
+          text: m.text || m.plain || '',
+          plain: m.plain || m.text || '',
+          html: m.html || null,
+          entity: m.entity || null,
+          at: m.at || Date.now(),
+        }))
+      : [
+          { role: 'user', text: prompt || '', plain: prompt || '', at: Date.now() },
+          { role: 'assistant', plain: result || '', text: result || '', at: Date.now() },
+        ];
+    // Aggiorna se stessa sessione recente (stesso titolo entro 30 min) altrimenti nuovo
+    const title = (prompt || 'Chat').slice(0, 80);
     list.unshift({
       id: Date.now().toString(36),
       ts: Date.now(),
-      title: (prompt || 'Chat').slice(0, 80),
+      title,
       prompt: prompt || '',
-      result: (result || '').slice(0, 50000)
+      result: (result || '').slice(0, 20000),
+      messages: msgs.slice(-40),
     });
     saveHist(email, list);
   };
 
   window.wbLoadConversation = function (it) {
-    if (typeof showPanel === 'function' && it.result) showPanel(it.title || 'Cronologia', it.result);
-    else if (typeof say === 'function') say('Cronologia', (it.prompt || '').slice(0, 120));
+    if (typeof window.wbLoadConversation === 'function') {
+      /* overridden by wb-app */
+    }
+    if (it && typeof say === 'function') say('Cronologia', (it.title || '').slice(0, 80));
   };
 
   window.wbSession = session;
