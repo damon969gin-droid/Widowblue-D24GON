@@ -13,6 +13,14 @@ binding = "ASSETS"
 # id = "YOUR_KV_ID"
 # preview_id = "YOUR_PREVIEW_KV_ID"
 
-# Secrets:
+# IMPORTANTE: le API key devono essere SECRET, non Variables.
+# Le Variables vengono cancellate a ogni `wrangler deploy`.
+# I Secret restano dopo il deploy.
+#
+#   npx wrangler secret put TAVILY_API_KEY
+#   npx wrangler secret put SERPER_API_KEY
 #   npx wrangler secret put PEPPER
-#   npx wrangler secret put BRAVE_API_KEY   # opzionale, ricerca Brave
+#   npx wrangler secret put BRAVE_API_KEY
+#
+# Oppure Dashboard → Worker → Settings → Variables and Secrets
+# → Add → tipo "Encrypt" / Secret (NON Plaintext Variable)
