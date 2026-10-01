@@ -34,6 +34,8 @@ async function handleApi(request, env, url) {
           ok: true,
           service: 'widowblue',
           kv: !!env.AUTH_KV,
+          tavily: !!env.TAVILY_API_KEY,
+          serper: !!env.SERPER_API_KEY,
           brave: !!env.BRAVE_API_KEY,
           google: !!(env.GOOGLE_API_KEY && env.GOOGLE_CSE_ID),
           bing: !!env.BING_API_KEY,
@@ -115,7 +117,7 @@ function buildPlan(prompt, attachments, deep, search) {
     steps: deep
       ? [
           'Coordinatore: WBS e rischi',
-          'Ricerca multi-provider (Wiki, DDG, Google, Bing, Brave, Perplexity)',
+          'Ricerca multi-provider (Wiki, DDG, Tavily, Serper, …)',
           'Design system',
           'Frontend',
           'Backend API',
