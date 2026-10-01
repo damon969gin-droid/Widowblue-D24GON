@@ -1,7 +1,6 @@
 const logEl=document.getElementById('log'),files=[];let lastResult='';
 const chatMemory=[];
 const MAX_MEMORY=24;
-/** Thread completo per cronologia / ripresa */
 let threadMessages=[];
 
 function pushMemory(role,text,entity){
@@ -33,7 +32,49 @@ function linkHtml(url,label){
   return '<a href="'+esc(url)+'" target="_blank" rel="noopener noreferrer">'+esc(label||url)+'</a>';
 }
 
-/** Risposta in chat continua + pulsante Copia */
+async function shareText(title,text,btn){
+  const payload={title:title||'Widow Blue',text:String(text||'').slice(0,8000)};
+  try{
+    if(navigator.share&&(!navigator.canShare||navigator.canShare(payload))){
+      await navigator.share(payload);
+      if(btn){btn.textContent='Condiviso';setTimeout(()=>{btn.textContent=btn.dataset.label||'Condividi'},1500)}
+      return;
+    }
+  }catch(e){
+    if(e&&e.name==='AbortError')return;
+  }
+  try{
+    await navigator.clipboard.writeText(payload.text);
+    if(btn){btn.textContent='Link copiato';setTimeout(()=>{btn.textContent=btn.dataset.label||'Condividi'},1800)}
+    else say('Condividi','testo copiato negli appunti');
+  }catch(e2){
+    if(btn)btn.textContent='Errore';
+  }
+}
+
+function formatThreadPlain(){
+  const lines=['══ Widow Blue · conversazione ══',''];
+  threadMessages.forEach(m=>{
+    if(m.role==='user'){
+      lines.push('TU: '+(m.text||m.plain||''));
+      lines.push('');
+    }else{
+      lines.push('WIDOW BLUE:');
+      lines.push(m.plain||m.text||'');
+      lines.push('');
+    }
+  });
+  lines.push('— https://widowblue-d24gon.damon969gin.workers.dev');
+  return lines.join('\n');
+}
+
+function flashBtn(btn,okLabel){
+  const orig=btn.dataset.label||btn.textContent;
+  btn.textContent=okLabel;
+  setTimeout(()=>{btn.textContent=orig},1600);
+}
+
+/** Risposta in chat: Copia + Condividi */
 function appendReply(body){
   const plain=typeof body==='object'?body.plain:String(body||'');
   const html=typeof body==='object'?body.html:null;
@@ -49,18 +90,28 @@ function appendReply(body){
 
   const actions=document.createElement('div');
   actions.className='msg-actions';
+
   const copyBtn=document.createElement('button');
   copyBtn.type='button';
   copyBtn.className='sec';
+  copyBtn.dataset.label='Copia';
   copyBtn.textContent='Copia';
   copyBtn.onclick=async()=>{
     try{
       await navigator.clipboard.writeText(plain||content.innerText||'');
-      copyBtn.textContent='Copiato';
-      setTimeout(()=>{copyBtn.textContent='Copia'},1500);
+      flashBtn(copyBtn,'Copiato');
     }catch(e){copyBtn.textContent='Errore'}
   };
+
+  const shareBtn=document.createElement('button');
+  shareBtn.type='button';
+  shareBtn.className='sec';
+  shareBtn.dataset.label='Condividi';
+  shareBtn.textContent='Condividi';
+  shareBtn.onclick=()=>shareText('Widow Blue',plain||content.innerText||'',shareBtn);
+
   actions.appendChild(copyBtn);
+  actions.appendChild(shareBtn);
   d.appendChild(actions);
 
   logEl.appendChild(d);
@@ -84,6 +135,25 @@ function currentLang(){const v=langSel.value;return v==='auto'?(navigator.langua
 if(SR){rec=new SR();rec.interimResults=true;rec.continuous=false;rec.onresult=e=>{let final='';for(let i=e.resultIndex;i<e.results.length;i++){const t=e.results[i][0].transcript;if(e.results[i].isFinal)final+=t;else document.getElementById('q').placeholder=t}if(final){const q=document.getElementById('q');q.value=(q.value+' '+final).trim();q.placeholder='Continua la conversazione...'}};rec.onend=()=>{listening=false;voiceBtn.classList.remove('rec');voiceBtn.textContent='Voce'};rec.onerror=()=>{listening=false;voiceBtn.classList.remove('rec');voiceBtn.textContent='Voce';say('Voce','microfono non disponibile')}}
 voiceBtn.onclick=()=>{if(!rec){say('Voce','Usa Chrome/Edge per la voce');return}if(listening){rec.stop();return}rec.lang=currentLang();listening=true;voiceBtn.classList.add('rec');voiceBtn.textContent='Ascolto\u2026';try{rec.start()}catch(e){listening=false;voiceBtn.classList.remove('rec');voiceBtn.textContent='Voce'}};
 document.getElementById('allAgents').onclick=function(){allMode=!allMode;this.textContent='Tutti gli agenti: '+(allMode?'s\u00ec':'no');this.classList.toggle('on',allMode);if(allMode){for(let i=0;i<nodes.length;i++)nodes[i].act=Math.max(nodes[i].act,.45);say('Rete','TUTTI GLI AGENTI ON')}else say('Rete','modalit\u00e0 standard')};
+
+/* Condividi intera conversazione */
+(function ensureShareThreadBtn(){
+  if(document.getElementById('shareThread'))return;
+  const btn=document.createElement('button');
+  btn.type='button';
+  btn.id='shareThread';
+  btn.className='toggle';
+  btn.dataset.label='Condividi chat';
+  btn.textContent='Condividi chat';
+  btn.title='Condividi tutta la conversazione';
+  btn.onclick=()=>{
+    if(!threadMessages.length){say('Condividi','nessun messaggio da condividere');return}
+    shareText('Widow Blue · conversazione',formatThreadPlain(),btn);
+  };
+  const all=document.getElementById('allAgents');
+  if(all&&all.parentNode)all.parentNode.insertBefore(btn,all.nextSibling);
+  else document.querySelector('.bot').insertBefore(btn,document.getElementById('chips'));
+})();
 
 function isSoftwareRequest(prompt){
   const ql=(prompt||'').toLowerCase();
@@ -144,15 +214,12 @@ function analyze(q){
 const stepsStd=[[0,'Analizzo','Coordinatore'],[1,'Ricerca','Ricerca'],[0,'Sintesi','Coordinatore']];
 const stepsDeep=[[0,'Deep','Coordinatore'],[0,'Ricerca web','Ricerca'],[0,'Sintesi','Coordinatore']];
 
-/** Compat: non aprire più la finestra */
 function showPanel(title,body){
   appendReply(typeof body==='object'?body:{plain:String(body||''),html:null});
 }
 
-/** Riprendi conversazione dalla cronologia */
 window.wbLoadConversation=function(it){
   if(!it)return;
-  // Pulisci log (lascia spazio alla chat ripresa)
   logEl.innerHTML='';
   threadMessages=[];
   chatMemory.length=0;
@@ -173,7 +240,6 @@ window.wbLoadConversation=function(it){
       }
     });
   }else{
-    // Formato vecchio: prompt + result
     if(it.prompt){
       const ud=document.createElement('div');
       ud.className='msg user';
@@ -188,11 +254,10 @@ window.wbLoadConversation=function(it){
     }
   }
   logEl.scrollTop=1e9;
-  say('Cronologia','conversazione ripresa — puoi continuare a scrivere');
+  say('Cronologia','conversazione ripresa — puoi continuare');
   document.getElementById('q').focus();
 };
 
-// Panel buttons (nascosti ma non errori)
 const pclose=document.getElementById('pclose');
 const overlay=document.getElementById('overlay');
 const pcopy=document.getElementById('pcopy');
