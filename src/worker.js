@@ -68,7 +68,20 @@ async function handleApi(request, env, url) {
   }
 }
 
-/** Continua il discorso: arricchisce follow-up con contesto precedente */
+function resolveLang(body, prompt) {
+  let lang = String(body.lang || 'auto').toLowerCase();
+  if (lang.includes('-')) lang = lang.split('-')[0];
+  if (!lang || lang === 'auto') {
+    const t = String(prompt || '');
+    if (/[àèéìòù]/i.test(t) || /\b(che|cosa|quando|dove|perché|perche|come|chi)\b/i.test(t)) return 'it';
+    if (/[äöüß]/i.test(t) || /\b(was|wann|wie|wer|warum)\b/i.test(t)) return 'de';
+    if (/[ñ¿¡]/i.test(t) || /\b(qué|cuando|donde|quién)\b/i.test(t)) return 'es';
+    if (/\b(what|when|where|who|why|how)\b/i.test(t)) return 'en';
+    return 'it';
+  }
+  return lang.slice(0, 2);
+}
+
 function resolveWithHistory(prompt, history) {
   const p = String(prompt || '').trim();
   if (!p) return { query: p, entity: null, followUp: false };
@@ -86,7 +99,6 @@ function resolveWithHistory(prompt, history) {
     for (let i = hist.length - 1; i >= 0; i--) {
       const h = hist[i];
       if (h && h.role === 'user' && h.text) {
-        // ultima domanda utente sostanziale
         const t = String(h.text).trim();
         if (t.length > 8) {
           entity = t
@@ -121,11 +133,13 @@ async function handleSearch(request, env, cors) {
   const history = body.history || [];
   if (!raw) return json({ error: 'empty_query' }, 400, cors);
   const resolved = resolveWithHistory(raw, history);
+  const lang = resolveLang(body, raw);
   await logSpider(env, 'search_query', null, request);
-  const data = await modularSearch(resolved.query, { deep, env });
+  const data = await modularSearch(resolved.query, { deep, env, lang });
   data.resolvedQuery = resolved.query;
   data.followUp = resolved.followUp;
   data.contextEntity = resolved.entity;
+  data.lang = lang;
   return json(data, 200, cors);
 }
 
@@ -139,15 +153,16 @@ async function handleOrchestrate(request, env, cors) {
   if (!prompt && !attachments.length) return json({ error: 'empty_prompt' }, 400, cors);
 
   const resolved = resolveWithHistory(prompt, history);
+  const lang = resolveLang(body, prompt);
   let search = null;
   if (doSearch && resolved.query) {
-    search = await modularSearch(resolved.query, { deep, env });
+    search = await modularSearch(resolved.query, { deep, env, lang });
     search.resolvedQuery = resolved.query;
     search.followUp = resolved.followUp;
     search.contextEntity = resolved.entity;
+    search.lang = lang;
   }
 
-  // Entity per prossima domanda: titolo risposta
   let entity =
     (search && search.answer && search.answer.title) ||
     resolved.entity ||
@@ -164,6 +179,7 @@ async function handleOrchestrate(request, env, cors) {
         followUp: resolved.followUp,
         resolvedQuery: resolved.query,
         entity,
+        lang,
         historyTurns: Array.isArray(history) ? history.length : 0,
       },
     },
@@ -196,9 +212,7 @@ function buildPlan(prompt, attachments, deep, search) {
     prompt,
     attachments: attachments.map((a) => (typeof a === 'string' ? a : a.name || 'file')),
     stack,
-    steps: deep
-      ? ['Ricerca contestuale', 'Sintesi', 'Fonti']
-      : ['Ricerca', 'Sintesi'],
+    steps: deep ? ['Ricerca contestuale', 'Sintesi', 'Fonti'] : ['Ricerca', 'Sintesi'],
     sources,
     providersUsed: search ? search.providers : [],
     policy: search ? search.policy : null,
