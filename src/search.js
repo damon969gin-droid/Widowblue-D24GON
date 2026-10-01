@@ -3,13 +3,15 @@
  *
  * Sempre: wikipedia, duckduckgo
  * Opzionali (secret Cloudflare Pages):
+ *   TAVILY_API_KEY        (1k crediti/mese, no carta)
+ *   SERPER_API_KEY        (trial gratis ~2500 query)
  *   BRAVE_API_KEY
  *   GOOGLE_API_KEY + GOOGLE_CSE_ID
- *   BING_API_KEY          (Azure Bing Web Search v7)
- *   PERPLEXITY_API_KEY    (Perplexity chat completions → citazioni)
+ *   BING_API_KEY
+ *   PERPLEXITY_API_KEY
  */
 
-const UA = 'WidowBlueBot/0.3 (+https://github.com/damon969gin-droid/Widowblue-D24GON; research; respectful)';
+const UA = 'WidowBlueBot/0.4 (+https://github.com/damon969gin-droid/Widowblue-D24GON; research; respectful)';
 const TIMEOUT_MS = 10000;
 
 export async function modularSearch(query, opts = {}) {
@@ -27,6 +29,12 @@ export async function modularSearch(query, opts = {}) {
     runProvider('duckduckgo', () => searchDuckDuckGo(q)),
   ];
 
+  if (env.TAVILY_API_KEY) {
+    jobs.push(runProvider('tavily', () => searchTavily(q, env.TAVILY_API_KEY, deep)));
+  }
+  if (env.SERPER_API_KEY) {
+    jobs.push(runProvider('serper', () => searchSerper(q, env.SERPER_API_KEY, deep ? 10 : 5)));
+  }
   if (env.BRAVE_API_KEY) {
     jobs.push(runProvider('brave', () => searchBrave(q, env.BRAVE_API_KEY, deep ? 10 : 5)));
   }
@@ -156,6 +164,99 @@ async function searchDuckDuckGo(q) {
   return out.slice(0, 8);
 }
 
+/** Tavily – free 1k credits/month, no card */
+async function searchTavily(q, apiKey, deep) {
+  const res = await fetch('https://api.tavily.com/search', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Accept: 'application/json',
+      'User-Agent': UA,
+    },
+    body: JSON.stringify({
+      api_key: apiKey,
+      query: q,
+      search_depth: deep ? 'advanced' : 'basic',
+      max_results: deep ? 10 : 5,
+      include_answer: true,
+      include_raw_content: false,
+    }),
+  });
+  if (!res.ok) {
+    const errBody = await res.text().catch(() => '');
+    throw new Error('tavily HTTP ' + res.status + (errBody ? ': ' + errBody.slice(0, 120) : ''));
+  }
+  const data = await res.json();
+  const out = [];
+  if (data.answer) {
+    out.push({
+      provider: 'tavily',
+      title: 'Sintesi Tavily',
+      url: 'https://tavily.com/',
+      snippet: String(data.answer).slice(0, 600),
+      fetchedAt: Date.now(),
+    });
+  }
+  for (const r of data.results || []) {
+    out.push({
+      provider: 'tavily',
+      title: r.title || '',
+      url: r.url || '',
+      snippet: r.content || r.snippet || '',
+      fetchedAt: Date.now(),
+    });
+  }
+  return out;
+}
+
+/** Serper – Google SERP JSON, trial gratuito */
+async function searchSerper(q, apiKey, num = 5) {
+  const res = await fetch('https://google.serper.dev/search', {
+    method: 'POST',
+    headers: {
+      'X-API-KEY': apiKey,
+      'Content-Type': 'application/json',
+      Accept: 'application/json',
+      'User-Agent': UA,
+    },
+    body: JSON.stringify({ q, num: Math.min(Math.max(1, num), 10) }),
+  });
+  if (!res.ok) {
+    const errBody = await res.text().catch(() => '');
+    throw new Error('serper HTTP ' + res.status + (errBody ? ': ' + errBody.slice(0, 120) : ''));
+  }
+  const data = await res.json();
+  const out = [];
+  if (data.answerBox && (data.answerBox.answer || data.answerBox.snippet)) {
+    out.push({
+      provider: 'serper',
+      title: data.answerBox.title || 'Answer Box',
+      url: data.answerBox.link || '',
+      snippet: data.answerBox.answer || data.answerBox.snippet || '',
+      fetchedAt: Date.now(),
+    });
+  }
+  if (data.knowledgeGraph && data.knowledgeGraph.description) {
+    out.push({
+      provider: 'serper',
+      title: data.knowledgeGraph.title || 'Knowledge Graph',
+      url: data.knowledgeGraph.descriptionLink || data.knowledgeGraph.website || '',
+      snippet: data.knowledgeGraph.description,
+      fetchedAt: Date.now(),
+    });
+  }
+  for (const r of data.organic || []) {
+    out.push({
+      provider: 'serper',
+      title: r.title || '',
+      url: r.link || '',
+      snippet: r.snippet || '',
+      fetchedAt: Date.now(),
+    });
+  }
+  return out;
+}
+
 async function searchBrave(q, apiKey, count = 5) {
   const url =
     'https://api.search.brave.com/res/v1/web/search?q=' +
@@ -208,7 +309,6 @@ async function searchGoogle(q, apiKey, cx, num = 5) {
   }));
 }
 
-/** Microsoft Bing Web Search API v7 (Azure) */
 async function searchBing(q, apiKey, count = 5) {
   const n = Math.min(Math.max(1, count), 50);
   const url =
@@ -239,10 +339,6 @@ async function searchBing(q, apiKey, count = 5) {
   }));
 }
 
-/**
- * Perplexity: risposta con citazioni (sonar)
- * Estrae url dalle citations / search_results
- */
 async function searchPerplexity(q, apiKey, deep) {
   const model = deep ? 'sonar-pro' : 'sonar';
   const res = await fetch('https://api.perplexity.ai/chat/completions', {
@@ -276,8 +372,6 @@ async function searchPerplexity(q, apiKey, deep) {
   const content =
     (data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content) || '';
   const out = [];
-
-  // Citations array (API field varies by version)
   const cites = data.citations || data.search_results || [];
   if (Array.isArray(cites)) {
     for (const c of cites.slice(0, deep ? 12 : 6)) {
@@ -300,8 +394,6 @@ async function searchPerplexity(q, apiKey, deep) {
       }
     }
   }
-
-  // Always include the synthesized answer as a pseudo-result
   if (content) {
     out.unshift({
       provider: 'perplexity',
@@ -311,6 +403,5 @@ async function searchPerplexity(q, apiKey, deep) {
       fetchedAt: Date.now(),
     });
   }
-
   return out;
 }
