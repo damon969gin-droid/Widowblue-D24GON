@@ -1,8 +1,7 @@
 import { noAnswerMsg, detectLang } from './lang.js';
 /**
  * WidowBlue – motore di risposta chat
- * Naturale, filtrato, appropriato, approfondito.
- * Chain-of-thought solo interno (non mostrato all'utente).
+ * Naturale, filtrato, pertinente, in lingua selezionata.
  */
 
 const TEAMS_IT = [
@@ -12,102 +11,45 @@ const TEAMS_IT = [
 ];
 
 const AI_GLOSSARY = {
-  addestramento: {
-    it: 'L\'addestramento (training) è il processo in cui un modello di machine learning regola i propri parametri sui dati, minimizzando un errore. Include di solito pre-training su grandi corpus e, se serve, fine-tuning su compiti specifici.',
-    en: 'Training is the process of adjusting model parameters on data to minimize error, often via pre-training then fine-tuning.',
-  },
-  agi: {
-    it: 'AGI (Artificial General Intelligence) indica un\'intelligenza artificiale con capacità generali paragonabili a quelle umane su molti compiti cognitivi, non limitata a un solo dominio come la maggior parte dei sistemi attuali (AI ristretta).',
-    en: 'AGI means AI with broad, human-level cognitive abilities across many domains, unlike today\'s narrow systems.',
-  },
-  'agente ai': {
-    it: 'Un agente AI è un sistema che percepisce un obiettivo, pianifica passi, usa strumenti (ricerca, codice, API) e agisce in autonomia fino a completare il compito, spesso in più turni.',
-    en: 'An AI agent pursues a goal, plans steps, uses tools, and acts over multiple turns.',
-  },
-  'ai generativa': {
-    it: 'L\'AI generativa crea nuovi contenuti (testo, immagini, audio, codice) a partire da pattern appresi, invece di limitarsi a classificare o prevedere etichette su dati esistenti.',
-    en: 'Generative AI creates new content from learned patterns rather than only classifying existing data.',
-  },
-  allucinazione: {
-    it: 'Un\'allucinazione è quando un modello produce informazioni plausible ma false o non supportate dalle fonti. Si riduce con grounding (RAG), citazioni e verifica fattuale.',
-    en: 'Hallucination is plausible but false output; reduced via grounding, citations, and fact checks.',
-  },
-  bias: {
-    it: 'Il bias è una distorsione sistematica nelle predizioni o nei dati (campionamento, etichette, rappresentazione). Può portare a risultati iniqui o poco generalizzabili; si mitiga con dati equilibrati, audit e metriche di fairness.',
-    en: 'Bias is systematic distortion in data or predictions; mitigated with balanced data and fairness audits.',
-  },
-  'chain of thought': {
-    it: 'La chain of thought (catena del pensiero) è una tecnica in cui il modello ragiona per passi intermedi prima della risposta finale, migliorando compiti multi-step. In produzione i passi possono restare interni e mostrare solo la conclusione.',
-    en: 'Chain of thought is step-by-step intermediate reasoning before the final answer.',
-  },
-  'catena del pensiero': {
-    it: 'La chain of thought (catena del pensiero) è una tecnica in cui il modello ragiona per passi intermedi prima della risposta finale, migliorando compiti multi-step. In produzione i passi possono restare interni e mostrare solo la conclusione.',
-    en: 'Chain of thought is step-by-step intermediate reasoning before the final answer.',
-  },
-  dataset: {
-    it: 'Un dataset è l\'insieme di esempi (testo, immagini, tabelle) usato per addestrare, validare o testare un modello. Qualità, copertura e bilanciamento del dataset influenzano direttamente le prestazioni.',
-    en: 'A dataset is the collection of examples used to train, validate, or test a model.',
-  },
-  'deep learning': {
-    it: 'Il deep learning usa reti neurali con molti strati per apprendere rappresentazioni gerarchiche dai dati. È alla base di vision, NLP e modelli generativi moderni.',
-    en: 'Deep learning uses multi-layer neural nets to learn hierarchical representations.',
-  },
-  distillazione: {
-    it: 'La distillazione (knowledge distillation) trasferisce conoscenza da un modello grande (teacher) a uno più piccolo (student), mantenendo buona qualità con costi di inferenza inferiori.',
-    en: 'Distillation transfers knowledge from a large teacher model to a smaller student.',
-  },
-  'fine-tuning': {
-    it: 'Il fine-tuning adatta un modello già pre-addestrato a un compito o dominio specifico, aggiornando (tutti o parte dei) parametri su un dataset più mirato. Tecniche come LoRA riducono il costo.',
-    en: 'Fine-tuning adapts a pretrained model to a specific task, sometimes via LoRA adapters.',
-  },
-  llm: {
-    it: 'Un LLM (Large Language Model) è un modello linguistico di grandi dimensioni, tipicamente basato su Transformer, addestrato su enormi quantità di testo per predire e generare linguaggio.',
-    en: 'An LLM is a large Transformer-based language model trained to predict and generate text.',
-  },
-  'machine learning': {
-    it: 'Il machine learning è l\'insieme di metodi che permettono a un sistema di migliorare le prestazioni su un compito a partire dai dati, senza regole scritte a mano per ogni caso.',
-    en: 'Machine learning improves task performance from data without hand-coded rules for every case.',
-  },
-  'pre-training': {
-    it: 'Il pre-training è la fase iniziale di apprendimento su grandi dataset generici (es. testo web), che dà al modello conoscenze linguistiche e di mondo prima del fine-tuning.',
-    en: 'Pre-training is large-scale generic learning before task-specific fine-tuning.',
-  },
-  'prompt engineering': {
-    it: 'Il prompt engineering progetta istruzioni e contesti per ottenere dal modello risposte più accurate, stabili e utili, senza riallenare i pesi.',
-    en: 'Prompt engineering crafts instructions to steer model output without retraining weights.',
-  },
-  'rete neurale': {
-    it: 'Una rete neurale è un modello composito di unità (neuroni) collegate da pesi: trasforma input in output attraverso strati e non-linearità, addestrata tipicamente con backpropagation.',
-    en: 'A neural network maps inputs to outputs via weighted layers trained with backpropagation.',
-  },
-  'superintelligenza artificiale': {
-    it: 'La superintelligenza artificiale (ASI) descrive un\'ipotetica AI che supera di molto le capacità cognitive umane nella maggior parte dei domini. È un concetto teorico/futuribile, distinto dall\'AGI e dai sistemi attuali.',
-    en: 'ASI is hypothetical AI far beyond human cognitive ability across most domains.',
-  },
-  token: {
-    it: 'Un token è l\'unità base con cui i modelli linguistici spezzano il testo (parole, sottoparole o caratteri). Il numero di token influenza contesto massimo e costo di elaborazione.',
-    en: 'A token is the basic text unit models process; count affects context window and cost.',
-  },
+  addestramento: { it: 'L\'addestramento (training) è il processo in cui un modello regola i parametri sui dati per ridurre l\'errore.', en: 'Training adjusts model parameters on data to minimize error.' },
+  agi: { it: 'AGI indica un\'AI con capacità generali paragonabili a quelle umane su molti compiti.', en: 'AGI means AI with broad human-level abilities across domains.' },
+  'agente ai': { it: 'Un agente AI persegue un obiettivo, pianifica e usa strumenti in autonomia.', en: 'An AI agent pursues goals using tools over multiple steps.' },
+  'ai generativa': { it: 'L\'AI generativa crea contenuti nuovi (testo, immagini, codice) da pattern appresi.', en: 'Generative AI creates new content from learned patterns.' },
+  allucinazione: { it: 'Allucinazione: informazione plausible ma non supportata dai fatti. Si riduce con grounding.', en: 'Hallucination is plausible but false output; reduced via grounding.' },
+  bias: { it: 'Bias: distorsione sistematica nei dati o nelle predizioni.', en: 'Bias is systematic distortion in data or predictions.' },
+  'chain of thought': { it: 'Chain of thought: ragionamento a passi interni prima della risposta finale.', en: 'Chain of thought is step-by-step intermediate reasoning.' },
+  'catena del pensiero': { it: 'Chain of thought: ragionamento a passi interni prima della risposta finale.', en: 'Chain of thought is step-by-step intermediate reasoning.' },
+  dataset: { it: 'Dataset: insieme di esempi per train, validazione o test.', en: 'A dataset is the collection of examples for train/val/test.' },
+  'deep learning': { it: 'Deep learning: reti neurali multi-strato per rappresentazioni gerarchiche.', en: 'Deep learning uses multi-layer neural nets.' },
+  distillazione: { it: 'Distillazione: trasferimento di conoscenza da un modello grande a uno più piccolo.', en: 'Distillation transfers knowledge from teacher to student model.' },
+  'fine-tuning': { it: 'Fine-tuning: adatta un modello pre-addestrato a un compito specifico.', en: 'Fine-tuning adapts a pretrained model to a task.' },
+  llm: { it: 'LLM: modello linguistico di grandi dimensioni, tipicamente Transformer.', en: 'An LLM is a large Transformer-based language model.' },
+  'machine learning': { it: 'Machine learning: migliorare prestazioni da dati senza regole scritte a mano per ogni caso.', en: 'Machine learning improves performance from data without hand-coded rules.' },
+  'pre-training': { it: 'Pre-training: apprendimento generico su grandi corpus prima del fine-tuning.', en: 'Pre-training is large-scale generic learning before fine-tuning.' },
+  'prompt engineering': { it: 'Prompt engineering: progettare istruzioni per risposte migliori senza riallenare i pesi.', en: 'Prompt engineering crafts instructions without retraining weights.' },
+  'rete neurale': { it: 'Rete neurale: unità collegate da pesi addestrate tipicamente con backpropagation.', en: 'A neural network maps inputs via weighted layers.' },
+  'superintelligenza artificiale': { it: 'ASI: ipotetica AI oltre le capacità umane nella maggior parte dei domini.', en: 'ASI is hypothetical AI beyond human cognitive ability.' },
+  token: { it: 'Token: unità base del testo per i modelli linguistici.', en: 'A token is the basic text unit models process.' },
 };
 
 const GLOSSARY_ALIASES = [
   ['addestramento', /\b(addestramento|training)\b/i],
-  ['agi', /\bagi\b|intelligenza generale|artificial general/i],
+  ['agi', /\bagi\b|intelligenza generale/i],
   ['agente ai', /\bagente\s*ai\b|\bai\s*agent\b/i],
   ['ai generativa', /ai\s*generativa|generative\s*ai/i],
   ['allucinazione', /allucinazion|hallucin/i],
   ['bias', /\bbias\b|distorsion/i],
   ['chain of thought', /chain\s*of\s*thought|catena del pensier/i],
-  ['dataset', /\bdataset\b|insieme di dati/i],
-  ['deep learning', /deep\s*learning|apprendimento profondo/i],
+  ['dataset', /\bdataset\b/i],
+  ['deep learning', /deep\s*learning/i],
   ['distillazione', /distillazion|knowledge\s*distillation/i],
   ['fine-tuning', /fine[\s-]?tuning|\blora\b/i],
-  ['llm', /\bllm\b|large language model|modello linguistico/i],
+  ['llm', /\bllm\b|large language model/i],
   ['machine learning', /machine\s*learning|apprendimento automatico/i],
-  ['pre-training', /pre[\s-]?training|preaddestr/i],
-  ['prompt engineering', /prompt\s*engineering|ingegneria del prompt/i],
+  ['pre-training', /pre[\s-]?training/i],
+  ['prompt engineering', /prompt\s*engineering/i],
   ['rete neurale', /rete\s*neural|neural\s*network/i],
-  ['superintelligenza artificiale', /superintelligen|\basi\b|artificial superintelligence/i],
+  ['superintelligenza artificiale', /superintelligen|\basi\b/i],
   ['token', /\btoken\b|tokenizzaz/i],
 ];
 
@@ -115,9 +57,7 @@ function glossaryAnswer(query, lang) {
   const ql = String(query || '');
   const code = String(lang || 'it').slice(0, 2);
   for (const [key, re] of GLOSSARY_ALIASES) {
-    if (re.test(ql) && AI_GLOSSARY[key]) {
-      return AI_GLOSSARY[key][code] || AI_GLOSSARY[key].it;
-    }
+    if (re.test(ql) && AI_GLOSSARY[key]) return AI_GLOSSARY[key][code] || AI_GLOSSARY[key].it;
   }
   return null;
 }
@@ -134,26 +74,51 @@ export function synthesizeAnswer(query, cited, priorAnswer, lang) {
   const gloss = glossaryAnswer(query, langCode);
   if (gloss) {
     const fromSources = extractive(query, cited);
-    if (fromSources && fromSources.length > 40) {
-      return polish(mergeDeep(gloss, fromSources, langCode), langCode);
-    }
+    if (fromSources && fromSources.length > 40) return polish(mergeDeep(gloss, fromSources, langCode), langCode);
     return polish(gloss, langCode);
   }
 
   if (priorAnswer && priorAnswer.text && priorAnswer.text.length > 30) {
     let t = priorAnswer.text;
-    if (/classifica|primo|serie a/i.test(ql)) {
-      const stand = extractStandingsFromText(t);
+    if (/classifica|primo|serie a|capolista|standings/i.test(ql)) {
+      const stand = extractStandingsFromText(t + ' ' + (cited || []).map((c) => c.text || '').join(' '));
       if (stand) return polish(stand, langCode);
     }
-    const deepened = deepenFromSources(query, t, cited, langCode);
-    return polish(deepened, langCode);
+    return polish(naturalize(query, deepenFromSources(query, t, cited, langCode), langCode), langCode);
   }
 
   const ext = extractive(query, cited);
-  if (ext) return polish(deepenFromSources(query, ext, cited, langCode), langCode);
+  if (ext) return polish(naturalize(query, deepenFromSources(query, ext, cited, langCode), langCode), langCode);
 
   return noAnswerMsg(langCode);
+}
+
+function naturalize(query, text, lang) {
+  let t = String(text || '').trim();
+  if (!t) return t;
+  t = t.replace(/^Sintesi\s+\w+[.:]?\s*/i, '');
+  const sentences = t.split(/(?<=[.!?])\s+/).filter((s) => s.length > 25);
+  if (sentences.length >= 2) {
+    const qTok = tokenize(query);
+    const scored = sentences.map((s) => {
+      const st = tokenize(s);
+      let hit = 0;
+      for (const x of qTok) if (st.has(x)) hit++;
+      return { s, hit, len: s.length };
+    });
+    scored.sort((a, b) => b.hit - a.hit || b.len - a.len);
+    const picked = [];
+    const seen = new Set();
+    for (const item of scored) {
+      const k = item.s.slice(0, 36).toLowerCase();
+      if (seen.has(k)) continue;
+      seen.add(k);
+      picked.push(item.s.trim());
+      if (picked.length >= 4) break;
+    }
+    if (picked.length) t = picked.join(' ');
+  }
+  return t;
 }
 
 function mergeDeep(core, extra, lang) {
@@ -203,7 +168,9 @@ function extractStandingsFromText(text) {
   }
   let m;
   const reEn = /\b([A-Z][a-z]+)\s+(?:with|on)\s+(\d{1,2})\s+points/gi;
+  const allowed = new Set(TEAMS_IT.map((x) => x.toLowerCase()));
   while ((m = reEn.exec(t))) {
+    if (!allowed.has(m[1].toLowerCase())) continue;
     leaders.push({ team: m[1], pts: parseInt(m[2], 10) });
   }
   const map = {};
@@ -217,18 +184,20 @@ function extractStandingsFromText(text) {
     const top = ranked[0];
     if (ranked.length >= 2 && ranked[1].pts === top.pts) {
       const same = ranked.filter((x) => x.pts === top.pts).map((x) => x.team);
-      return 'In classifica di Serie A, al momento in testa ci sono ' + same.join(', ') + ' a ' + top.pts + ' punti (a pari merito secondo le fonti disponibili).';
+      return 'In classifica di Serie A, al momento in testa a pari merito ci sono ' + same.join(', ') + ' con ' + top.pts + ' punti.';
     }
     let out = 'In classifica di Serie A, al momento è prima ' + top.team + ' con ' + top.pts + ' punti';
     if (ranked[1]) {
       out += ', seguita da ' + ranked[1].team + ' (' + ranked[1].pts + ' punti)';
       if (ranked[2]) out += ' e ' + ranked[2].team + ' (' + ranked[2].pts + ' punti)';
     }
-    out += ', secondo le fonti più recenti trovate.';
+    out += '.';
     return out;
   }
   const cap = t.match(/(?:capolista|in testa|leader)\s*[:=]?\s*([A-ZÀ-Ú][a-zà-ú]+)/i);
-  if (cap) return 'In Serie A, al momento risulta in testa ' + cap[1] + ', secondo le fonti disponibili.';
+  if (cap && allowed.has(cap[1].toLowerCase())) {
+    return 'In Serie A, al momento risulta in testa ' + cap[1] + '.';
+  }
   return null;
 }
 
@@ -273,28 +242,39 @@ function tokenize(s) {
 
 export function polish(text, lang) {
   let t = String(text || '').trim();
+  t = t.replace(/#{1,6}\s*/g, '');
+  t = t.replace(/\[\.\.\.\]/g, ' ');
+  t = t.replace(/\*{1,2}([^*]+)\*{1,2}/g, '$1');
+  t = t.replace(/What Are [^?\n]+\?/gi, '');
   t = t.replace(/\b([A-ZÀ-Ú][a-zà-ú]{2,})\s+\1\b/g, '$1');
   t = t.replace(/The sources do not provide[^.]*\./gi, '');
   t = t.replace(/According to the sources[,:]?/gi, '');
   t = t.replace(/as of today's date[,:]?/gi, '');
   t = t.replace(/\b(partial standings|overall winner|definitive answer)\b/gi, '');
   t = t.replace(/\b(extractive|grounded|RAG|pipeline|provider|Workers AI|system prompt)\b/gi, '');
-  t = t.replace(/\b(Step\s*\d+|Chain of thought:|Internal reasoning:)\b/gi, '');
-  t = t.replace(/\b(how to (make|build) (a )?bomb|child sexual)\b/gi, '[contenuto rimosso]');
-
-  if (lang && lang !== 'en') {
-    const enMarkers = (t.match(/\b(the|and|with|from|points|followed|according|sources|does not|provide)\b/gi) || []).length;
-    const localHints = (t.match(/[àèéìòùäöüßñ¿¡\u3040-\u30ff\u4e00-\u9fff\uac00-\ud7af\u0400-\u04ff]/g) || []).length;
-    if (enMarkers > 4 && localHints < 2) {
-      const stand = extractStandingsFromText(t);
-      if (stand && lang === 'it') return stand;
-      const gloss = glossaryAnswer(t, lang);
+  t = t.replace(/\beach\s+a\b/gi, 'con');
+  t = t.replace(/\beach\s+with\b/gi, 'con');
+  t = t.replace(/,\s*each\b/gi, '');
+  if (lang === 'it') {
+    t = t.replace(/\bpoints\b/gi, 'punti');
+    t = t.replace(/\bfollowed by\b/gi, 'seguita da');
+    const stand = extractStandingsFromText(t);
+    if (stand && /classifica|serie|punti|capolista|primo/i.test(t)) return stand;
+    const enMarkers = (t.match(/\b(the|and|with|from|followed|according|sources|does not|provide|which)\b/gi) || []).length;
+    const itMarkers = (t.match(/\b(il|la|di|con|punti|seguita|secondo|classifica|prima|è|sono|della)\b/gi) || []).length;
+    if (enMarkers > itMarkers + 2) {
+      const gloss = glossaryAnswer(t, 'it');
       if (gloss) return gloss;
     }
   }
-
   t = t.replace(/\s{2,}/g, ' ').replace(/\n{3,}/g, '\n\n').trim();
-  return t.slice(0, 2200);
+  if (t.length > 1800) {
+    const cut = t.slice(0, 1800);
+    const last = Math.max(cut.lastIndexOf('.'), cut.lastIndexOf('!'), cut.lastIndexOf('?'));
+    if (last > 400) t = cut.slice(0, last + 1);
+    else t = cut;
+  }
+  return t;
 }
 
 export function expandForIntent(q, lang) {
@@ -304,15 +284,9 @@ export function expandForIntent(q, lang) {
     if (/serie\s*a/i.test(base) || /calcio/i.test(base)) {
       out.push('classifica Serie A aggiornata oggi');
       out.push('Serie A classifica live capolista');
-      out.push('Serie A standings today');
     } else {
       out.push(base + ' aggiornata oggi');
-      out.push(base + ' live');
     }
-  }
-  if (/\b(llm|transformer|rag|fine-tuning|allucinaz)/i.test(base)) {
-    out.push(base + ' spiegazione');
-    out.push(base + ' definition explained');
   }
   return out;
 }
