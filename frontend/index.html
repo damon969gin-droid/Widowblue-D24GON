@@ -15,7 +15,6 @@ canvas{position:fixed;inset:0;width:100%;height:100%;touch-action:none;cursor:gr
 .stat b{display:block;font-size:28px;color:var(--am);font-weight:700;line-height:1}
 .bot{position:fixed;left:0;right:0;bottom:0;padding:8px 14px calc(10px + env(safe-area-inset-bottom,0px));background:linear-gradient(to top,rgba(4,10,18,.5) 0%,rgba(4,10,18,.12) 50%,transparent 100%);pointer-events:none;z-index:2}
 .bot>*{pointer-events:auto}
-/* Chat leggibile + scroll */
 #log{
   height:min(48vh,420px);
   max-height:48vh;
@@ -73,7 +72,7 @@ button:disabled{opacity:.5}button.rec{border-color:#ff6b6b;color:#ff6b6b;animati
 <div class="top"><h1>WIDOW BLUE</h1><p>Chat continua · trascina per ruotare la rete</p></div>
 <div class="stat"><b id="n">0</b>attivi su <span id="t">432</span> agenti</div>
 <div class="bot">
-<div id="log"><div class="msg agent"><i>Widow Blue</i> pronta. Domande e risposte restano in chat — scorri per leggere tutto.</div></div>
+<div id="log"></div>
 <button type="button" class="toggle" id="allAgents">Tutti gli agenti: no</button>
 <div id="chips"></div>
 <div class="row">
