@@ -1,10 +1,11 @@
 /**
- * WidowBlue Worker – Auth + Search + RAG + Orchestrator
+ * WidowBlue Worker – Auth + Search + RAG + Image + Orchestrator
  * Superadmin: giorgi.daniele96@gmail.com
  */
 
 import { modularSearch } from './search.js';
 import { runRAG } from './rag.js';
+import { isImageRequest, generateImage } from './image.js';
 
 const ADMIN_EMAIL = 'giorgi.daniele96@gmail.com';
 const SESSION_TTL_SEC = 60 * 60 * 24 * 7;
@@ -36,6 +37,7 @@ async function handleApi(request, env, url) {
           service: 'widowblue',
           conversation: true,
           rag: true,
+          image: true,
           workersAI: !!env.AI,
           kv: !!env.AUTH_KV,
           tavily: !!env.TAVILY_API_KEY,
@@ -44,7 +46,14 @@ async function handleApi(request, env, url) {
           google: !!(env.GOOGLE_API_KEY && env.GOOGLE_CSE_ID),
           bing: !!env.BING_API_KEY,
           perplexity: !!env.PERPLEXITY_API_KEY,
-          endpoints: ['/api/health', '/api/auth/*', '/api/search', '/api/rag', '/api/orchestrate'],
+          endpoints: [
+            '/api/health',
+            '/api/auth/*',
+            '/api/search',
+            '/api/rag',
+            '/api/image',
+            '/api/orchestrate',
+          ],
         },
         200,
         cors
@@ -57,17 +66,10 @@ async function handleApi(request, env, url) {
     if (url.pathname === '/api/auth/me' && request.method === 'GET') return me(request, env, cors);
     if (url.pathname === '/api/auth/timed-key' && request.method === 'POST') return timedKey(request, env, cors);
 
-    if (url.pathname === '/api/search' && request.method === 'POST') {
-      return handleSearch(request, env, cors);
-    }
-
-    if (url.pathname === '/api/rag' && request.method === 'POST') {
-      return handleRAG(request, env, cors);
-    }
-
-    if (url.pathname === '/api/orchestrate' && request.method === 'POST') {
-      return handleOrchestrate(request, env, cors);
-    }
+    if (url.pathname === '/api/search' && request.method === 'POST') return handleSearch(request, env, cors);
+    if (url.pathname === '/api/rag' && request.method === 'POST') return handleRAG(request, env, cors);
+    if (url.pathname === '/api/image' && request.method === 'POST') return handleImage(request, env, cors);
+    if (url.pathname === '/api/orchestrate' && request.method === 'POST') return handleOrchestrate(request, env, cors);
 
     return json({ error: 'not_found' }, 404, cors);
   } catch (e) {
@@ -80,10 +82,10 @@ function resolveLang(body, prompt) {
   if (lang.includes('-')) lang = lang.split('-')[0];
   if (!lang || lang === 'auto') {
     const t = String(prompt || '');
-    if (/[àèéìòù]/i.test(t) || /\b(che|cosa|quando|dove|perché|perche|come|chi)\b/i.test(t)) return 'it';
+    if (/[àèéìòù]/i.test(t) || /\b(che|cosa|quando|dove|perché|perche|come|chi|genera|immagine)\b/i.test(t)) return 'it';
     if (/[äöüß]/i.test(t) || /\b(was|wann|wie|wer|warum)\b/i.test(t)) return 'de';
     if (/[ñ¿¡]/i.test(t) || /\b(qué|cuando|donde|quién)\b/i.test(t)) return 'es';
-    if (/\b(what|when|where|who|why|how)\b/i.test(t)) return 'en';
+    if (/\b(what|when|where|who|why|how|generate|image)\b/i.test(t)) return 'en';
     return 'it';
   }
   return lang.slice(0, 2);
@@ -133,17 +135,33 @@ function resolveWithHistory(prompt, history) {
   return { query, entity, followUp };
 }
 
-/** Default search = RAG (retrieve + grounded answer) */
 async function handleSearch(request, env, cors) {
   const body = await request.json().catch(() => ({}));
   const raw = String(body.query || body.q || '').trim();
   const deep = !!body.deep;
   const history = body.history || [];
-  const useRag = body.rag !== false; // default ON
+  const useRag = body.rag !== false;
   if (!raw) return json({ error: 'empty_query' }, 400, cors);
   const resolved = resolveWithHistory(raw, history);
   const lang = resolveLang(body, raw);
   await logSpider(env, 'search_query', null, request);
+
+  if (isImageRequest(raw)) {
+    const img = await generateImage(raw, { env, lang });
+    return json(
+      {
+        ok: true,
+        mode: 'image',
+        lang,
+        answer: { text: img.message, title: 'Image', provider: img.provider },
+        image: img,
+        results: [],
+        providers: [],
+      },
+      200,
+      cors
+    );
+  }
 
   if (useRag) {
     const data = await runRAG(resolved.query, { deep, env, lang, history });
@@ -178,6 +196,16 @@ async function handleRAG(request, env, cors) {
   return json(data, 200, cors);
 }
 
+async function handleImage(request, env, cors) {
+  const body = await request.json().catch(() => ({}));
+  const prompt = String(body.prompt || body.query || '').trim();
+  if (!prompt) return json({ error: 'empty_prompt' }, 400, cors);
+  const lang = resolveLang(body, prompt);
+  await logSpider(env, 'image_gen', null, request);
+  const img = await generateImage(prompt, { env, lang });
+  return json(img, 200, cors);
+}
+
 async function handleOrchestrate(request, env, cors) {
   const body = await request.json().catch(() => ({}));
   const prompt = String(body.prompt || body.query || '').trim();
@@ -189,9 +217,38 @@ async function handleOrchestrate(request, env, cors) {
 
   const resolved = resolveWithHistory(prompt, history);
   const lang = resolveLang(body, prompt);
+
+  if (isImageRequest(prompt)) {
+    const img = await generateImage(prompt, { env, lang });
+    return json(
+      {
+        ok: true,
+        intent: 'image',
+        image: img,
+        search: {
+          ok: true,
+          mode: 'image',
+          answer: { text: img.message, title: 'Image', provider: img.provider, grounded: false },
+          results: [],
+          lang,
+        },
+        conversation: {
+          lang,
+          mode: 'image',
+          followUp: false,
+          resolvedQuery: prompt,
+          entity: null,
+          historyTurns: Array.isArray(history) ? history.length : 0,
+        },
+        plan: { mode: 'image', steps: ['Generate image'], stack: [], sources: [] },
+      },
+      200,
+      cors
+    );
+  }
+
   let search = null;
   if (doSearch && resolved.query) {
-    // Orchestrate uses full RAG by default
     search = await runRAG(resolved.query, { deep, env, lang, history });
     search.resolvedQuery = resolved.query;
     search.followUp = resolved.followUp;
