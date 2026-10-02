@@ -1,20 +1,20 @@
 <!DOCTYPE html>
 <html lang="it"><head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
 <title>Widow Blue</title>
 <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;600;700&display=swap" rel="stylesheet">
 <style>
 :root{--bg:#040a12;--cy:#4de1ff;--am:#ffb347;--tx:#cfeaf5;--dim:#5f8296}
-*{box-sizing:border-box}html,body{height:100%;margin:0;background:var(--bg);color:var(--tx);font-family:Rajdhani,system-ui,sans-serif;overflow:hidden}
-canvas{position:fixed;inset:0;width:100%;height:100%;touch-action:none;cursor:grab;z-index:0}
+*{box-sizing:border-box}html,body{height:100%;margin:0;background:var(--bg);color:var(--tx);font-family:Rajdhani,system-ui,sans-serif;overflow:hidden;touch-action:none}
+canvas#c{position:fixed;inset:0;width:100%;height:100%;touch-action:none;cursor:grab;z-index:0}
 .top{position:fixed;left:16px;top:calc(12px + env(safe-area-inset-top,0px));pointer-events:none;z-index:2}
 .top h1{margin:0;font-size:24px;font-weight:700;letter-spacing:.06em;color:var(--cy);text-shadow:0 0 12px rgba(4,10,18,.8)}
 .top p{margin:2px 0 0;font-size:13px;color:var(--dim);text-shadow:0 0 8px rgba(4,10,18,.7)}
 .stat{position:fixed;right:56px;top:calc(12px + env(safe-area-inset-top,0px));text-align:right;font-size:13px;color:var(--dim);pointer-events:none;z-index:2;text-shadow:0 0 8px rgba(4,10,18,.7)}
 .stat b{display:block;font-size:28px;color:var(--am);font-weight:700;line-height:1}
 .bot{position:fixed;left:0;right:0;bottom:0;padding:8px 14px calc(10px + env(safe-area-inset-bottom,0px));background:linear-gradient(to top,rgba(4,10,18,.5) 0%,rgba(4,10,18,.12) 50%,transparent 100%);pointer-events:none;z-index:2}
-.bot>*{pointer-events:auto}
+.bot .toggles,.bot .row,#chips{pointer-events:auto}
 #log{
   height:min(48vh,420px);
   max-height:48vh;
@@ -34,7 +34,10 @@ canvas{position:fixed;inset:0;width:100%;height:100%;touch-action:none;cursor:gr
   background:transparent;
   scrollbar-width:thin;
   scrollbar-color:#4de1ff rgba(4,10,18,.35);
+  pointer-events:none; /* area vuota → trascina grafica sotto */
+  touch-action:pan-y;
 }
+#log .msg{pointer-events:auto;touch-action:pan-y} /* messaggi scrollabili */
 #log::-webkit-scrollbar{width:8px}
 #log::-webkit-scrollbar-track{background:rgba(4,10,18,.35);border-radius:4px}
 #log::-webkit-scrollbar-thumb{background:rgba(77,225,255,.55);border-radius:4px}
@@ -71,7 +74,7 @@ button:disabled{opacity:.5}button.rec{border-color:#ff6b6b;color:#ff6b6b;animati
 .toggles{display:flex;flex-wrap:wrap;gap:4px;max-width:720px;margin:0 auto 4px}
 </style></head><body>
 <canvas id="c"></canvas>
-<div class="top"><h1>WIDOW BLUE</h1><p>Chat continua · trascina per ruotare la rete</p></div>
+<div class="top"><h1>WIDOW BLUE</h1><p>Trascina con il dito per ruotare la rete · chat in basso</p></div>
 <div class="stat"><b id="n">0</b>attivi su <span id="t">432</span> agenti</div>
 <div class="bot">
 <div id="log"></div>
