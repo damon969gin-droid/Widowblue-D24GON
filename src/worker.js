@@ -9,6 +9,7 @@ import { isImageRequest, generateImage } from './image.js';
 import { buildConversationContext } from './context.js';
 import { agentStats, selectAgentsForTask, runAgentContributions, detectIntent, getAgentCatalog, curriculumSummary, matchCurriculum } from './agents.js';
 import { hasDB, dbHealth, listAgents, ensureAgentsSeeded, logSearch } from './db.js';
+import { resolveLang, detectLang, translateText } from './lang.js';
 
 const ADMIN_EMAIL = 'giorgi.daniele96@gmail.com';
 const SESSION_TTL_SEC = 60 * 60 * 24 * 7;
@@ -45,6 +46,7 @@ async function handleApi(request, env, url) {
           image: true,
           multiAgent: true,
           curriculum: true,
+          multiLang: true,
           workersAI: !!env.AI,
           kv: !!env.AUTH_KV,
           d1: hasDB(env),
@@ -149,20 +151,7 @@ async function handleApi(request, env, url) {
   }
 }
 
-function resolveLang(body, prompt) {
-  let lang = String(body.lang || 'auto').toLowerCase();
-  if (lang.includes('-')) lang = lang.split('-')[0];
-  if (!lang || lang === 'auto') {
-    const t = String(prompt || '');
-    if (/[àèéìòù]/i.test(t) || /\b(che|cosa|quando|dove|perché|perche|come|chi|genera|immagine)\b/i.test(t))
-      return 'it';
-    if (/[äöüß]/i.test(t) || /\b(was|wann|wie|wer|warum)\b/i.test(t)) return 'de';
-    if (/[ñ¿¡]/i.test(t) || /\b(qué|cuando|donde|quién)\b/i.test(t)) return 'es';
-    if (/\b(what|when|where|who|why|how|generate|image)\b/i.test(t)) return 'en';
-    return 'it';
-  }
-  return lang.slice(0, 2);
-}
+/* resolveLang from lang.js */
 
 async function handleSearch(request, env, cors) {
   const body = await request.json().catch(() => ({}));
@@ -174,6 +163,14 @@ async function handleSearch(request, env, cors) {
 
   const ctx = buildConversationContext(raw, history);
   const lang = resolveLang(body, raw);
+  const detected = detectLang(raw);
+  let searchQuery = ctx.query || raw;
+  if (body.lang && body.lang !== 'auto' && detected !== lang && searchQuery.length > 2) {
+    try {
+      const tr = await translateText(searchQuery, detected, lang);
+      if (tr && tr.length > 2) searchQuery = tr;
+    } catch (_) {}
+  }
   await logSpider(env, 'search_query', null, request);
 
   if (isImageRequest(raw)) {
@@ -198,13 +195,13 @@ async function handleSearch(request, env, cors) {
   }
 
   const selection = selectAgentsForTask({
-    query: ctx.query,
+    query: searchQuery,
     allMode: !!body.allAgents || !!body.allMode,
   });
-  const pipeline = runAgentContributions(ctx.query, selection, { deep });
+  const pipeline = runAgentContributions(searchQuery, selection, { deep });
 
   if (useRag) {
-    const data = await runRAG(ctx.query, {
+    const data = await runRAG(searchQuery, {
       deep: deep || pipeline.boosts.preferDeep,
       env,
       lang,
@@ -213,7 +210,10 @@ async function handleSearch(request, env, cors) {
       intent: selection.intent,
       agentPipeline: pipeline,
     });
-    data.resolvedQuery = ctx.query;
+    data.resolvedQuery = searchQuery;
+    data.originalQuery = raw;
+    data.detectedLang = detected;
+    data.answerLang = lang;
     data.followUp = ctx.followUp;
     data.contextEntity = ctx.entity;
     data.contextTopic = ctx.topic;
@@ -233,8 +233,11 @@ async function handleSearch(request, env, cors) {
     return json(data, 200, cors);
   }
 
-  const data = await modularSearch(ctx.query, { deep, env, lang, context: ctx });
-  data.resolvedQuery = ctx.query;
+  const data = await modularSearch(searchQuery, { deep, env, lang, context: ctx });
+  data.resolvedQuery = searchQuery;
+  data.originalQuery = raw;
+  data.detectedLang = detected;
+  data.answerLang = lang;
   data.followUp = ctx.followUp;
   data.contextEntity = ctx.entity;
   data.lang = lang;
@@ -271,6 +274,7 @@ async function handleRAG(request, env, cors) {
   data.contextDomain = ctx.domain;
   data.intent = selection.intent;
   data.agentsCount = selection.count;
+  data.lang = lang;
   if (selection.curriculum) data.curriculum = selection.curriculum;
   return json(data, 200, cors);
 }
@@ -283,7 +287,7 @@ async function handleImage(request, env, cors) {
   await logSpider(env, 'image_gen', null, request);
   const img = await generateImage(prompt, { env, lang });
   const selection = selectAgentsForTask({ query: prompt, intent: 'image' });
-  return json({ ...img, intent: 'image', agents: selection.agents, agentsCount: selection.count }, 200, cors);
+  return json({ ...img, intent: 'image', agents: selection.agents, agentsCount: selection.count, lang }, 200, cors);
 }
 
 async function handleOrchestrate(request, env, cors) {
