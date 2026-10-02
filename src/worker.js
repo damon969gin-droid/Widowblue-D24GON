@@ -1,9 +1,10 @@
 /**
- * WidowBlue Worker – Auth + Search + Orchestrator + conversation context
+ * WidowBlue Worker – Auth + Search + RAG + Orchestrator
  * Superadmin: giorgi.daniele96@gmail.com
  */
 
 import { modularSearch } from './search.js';
+import { runRAG } from './rag.js';
 
 const ADMIN_EMAIL = 'giorgi.daniele96@gmail.com';
 const SESSION_TTL_SEC = 60 * 60 * 24 * 7;
@@ -34,6 +35,8 @@ async function handleApi(request, env, url) {
           ok: true,
           service: 'widowblue',
           conversation: true,
+          rag: true,
+          workersAI: !!env.AI,
           kv: !!env.AUTH_KV,
           tavily: !!env.TAVILY_API_KEY,
           serper: !!env.SERPER_API_KEY,
@@ -41,7 +44,7 @@ async function handleApi(request, env, url) {
           google: !!(env.GOOGLE_API_KEY && env.GOOGLE_CSE_ID),
           bing: !!env.BING_API_KEY,
           perplexity: !!env.PERPLEXITY_API_KEY,
-          endpoints: ['/api/health', '/api/auth/*', '/api/search', '/api/orchestrate'],
+          endpoints: ['/api/health', '/api/auth/*', '/api/search', '/api/rag', '/api/orchestrate'],
         },
         200,
         cors
@@ -56,6 +59,10 @@ async function handleApi(request, env, url) {
 
     if (url.pathname === '/api/search' && request.method === 'POST') {
       return handleSearch(request, env, cors);
+    }
+
+    if (url.pathname === '/api/rag' && request.method === 'POST') {
+      return handleRAG(request, env, cors);
     }
 
     if (url.pathname === '/api/orchestrate' && request.method === 'POST') {
@@ -126,20 +133,48 @@ function resolveWithHistory(prompt, history) {
   return { query, entity, followUp };
 }
 
+/** Default search = RAG (retrieve + grounded answer) */
 async function handleSearch(request, env, cors) {
   const body = await request.json().catch(() => ({}));
   const raw = String(body.query || body.q || '').trim();
   const deep = !!body.deep;
   const history = body.history || [];
+  const useRag = body.rag !== false; // default ON
   if (!raw) return json({ error: 'empty_query' }, 400, cors);
   const resolved = resolveWithHistory(raw, history);
   const lang = resolveLang(body, raw);
   await logSpider(env, 'search_query', null, request);
+
+  if (useRag) {
+    const data = await runRAG(resolved.query, { deep, env, lang, history });
+    data.resolvedQuery = resolved.query;
+    data.followUp = resolved.followUp;
+    data.contextEntity = resolved.entity;
+    data.lang = lang;
+    return json(data, 200, cors);
+  }
+
   const data = await modularSearch(resolved.query, { deep, env, lang });
   data.resolvedQuery = resolved.query;
   data.followUp = resolved.followUp;
   data.contextEntity = resolved.entity;
   data.lang = lang;
+  return json(data, 200, cors);
+}
+
+async function handleRAG(request, env, cors) {
+  const body = await request.json().catch(() => ({}));
+  const raw = String(body.query || body.q || body.prompt || '').trim();
+  const deep = !!body.deep;
+  const history = body.history || [];
+  if (!raw) return json({ error: 'empty_query' }, 400, cors);
+  const resolved = resolveWithHistory(raw, history);
+  const lang = resolveLang(body, raw);
+  await logSpider(env, 'rag_query', null, request);
+  const data = await runRAG(resolved.query, { deep, env, lang, history });
+  data.resolvedQuery = resolved.query;
+  data.followUp = resolved.followUp;
+  data.contextEntity = resolved.entity;
   return json(data, 200, cors);
 }
 
@@ -156,7 +191,8 @@ async function handleOrchestrate(request, env, cors) {
   const lang = resolveLang(body, prompt);
   let search = null;
   if (doSearch && resolved.query) {
-    search = await modularSearch(resolved.query, { deep, env, lang });
+    // Orchestrate uses full RAG by default
+    search = await runRAG(resolved.query, { deep, env, lang, history });
     search.resolvedQuery = resolved.query;
     search.followUp = resolved.followUp;
     search.contextEntity = resolved.entity;
@@ -167,7 +203,7 @@ async function handleOrchestrate(request, env, cors) {
     (search && search.answer && search.answer.title) ||
     resolved.entity ||
     null;
-  if (entity) entity = String(entity).replace(/\s*\((IT|EN)\)\s*$/i, '').trim();
+  if (entity) entity = String(entity).replace(/\s*\((IT|EN|[A-Z]{2})\)\s*$/i, '').trim();
 
   const plan = buildPlan(prompt, attachments, deep, search);
   return json(
@@ -181,6 +217,7 @@ async function handleOrchestrate(request, env, cors) {
         entity,
         lang,
         historyTurns: Array.isArray(history) ? history.length : 0,
+        mode: 'rag',
       },
     },
     200,
@@ -199,20 +236,22 @@ function buildPlan(prompt, attachments, deep, search) {
   if (/cloudflare|deploy|aws/.test(ql)) stack.push('Cloudflare Workers');
   if (!stack.length) stack.push('Next.js + Tailwind', 'Cloudflare Workers');
   const sources =
-    search && search.results
-      ? search.results.slice(0, deep ? 8 : 5).map((r) => ({
-          title: r.title,
-          url: r.url,
-          provider: r.provider,
-          snippet: (r.snippet || '').slice(0, 200),
-        }))
-      : [];
+    search && search.rag && search.rag.sources
+      ? search.rag.sources
+      : search && search.results
+        ? search.results.slice(0, deep ? 8 : 5).map((r) => ({
+            title: r.title,
+            url: r.url,
+            provider: r.provider,
+            snippet: (r.snippet || '').slice(0, 200),
+          }))
+        : [];
   return {
-    mode: deep ? 'deep' : 'standard',
+    mode: deep ? 'deep-rag' : 'rag',
     prompt,
     attachments: attachments.map((a) => (typeof a === 'string' ? a : a.name || 'file')),
     stack,
-    steps: deep ? ['Ricerca contestuale', 'Sintesi', 'Fonti'] : ['Ricerca', 'Sintesi'],
+    steps: ['Retrieve', 'Rank', 'Augment', 'Generate'],
     sources,
     providersUsed: search ? search.providers : [],
     policy: search ? search.policy : null,
