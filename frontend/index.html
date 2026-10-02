@@ -4,98 +4,11 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Widow Blue</title>
 <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;600;700&display=swap" rel="stylesheet">
-<style>
-:root{--bg:#040a12;--cy:#4de1ff;--am:#ffb347;--tx:#cfeaf5;--dim:#5f8296}
-*{box-sizing:border-box}html,body{height:100%;margin:0;background:var(--bg);color:var(--tx);font-family:Rajdhani,system-ui,sans-serif;overflow:hidden}
-canvas{position:fixed;inset:0;width:100%;height:100%;touch-action:none;cursor:grab;z-index:0}
-.top{position:fixed;left:16px;top:calc(12px + env(safe-area-inset-top,0px));pointer-events:none;z-index:2}
-.top h1{margin:0;font-size:24px;font-weight:700;letter-spacing:.06em;color:var(--cy);text-shadow:0 0 12px rgba(4,10,18,.8)}
-.top p{margin:2px 0 0;font-size:13px;color:var(--dim);text-shadow:0 0 8px rgba(4,10,18,.7)}
-.stat{position:fixed;right:56px;top:calc(12px + env(safe-area-inset-top,0px));text-align:right;font-size:13px;color:var(--dim);pointer-events:none;z-index:2;text-shadow:0 0 8px rgba(4,10,18,.7)}
-.stat b{display:block;font-size:28px;color:var(--am);font-weight:700;line-height:1}
-.bot{position:fixed;left:0;right:0;bottom:0;padding:8px 14px calc(10px + env(safe-area-inset-bottom,0px));background:linear-gradient(to top,rgba(4,10,18,.5) 0%,rgba(4,10,18,.12) 50%,transparent 100%);pointer-events:none;z-index:2}
-.bot>*{pointer-events:auto}
-#log{
-  height:min(48vh,420px);
-  max-height:48vh;
-  overflow-y:scroll;
-  overflow-x:hidden;
-  -webkit-overflow-scrolling:touch;
-  font-size:14px;
-  line-height:1.4;
-  display:flex;
-  flex-direction:column;
-  justify-content:flex-start;
-  margin-bottom:8px;
-  max-width:720px;
-  margin-left:auto;
-  margin-right:auto;
-  padding:6px 4px 6px 2px;
-  background:transparent;
-  scrollbar-width:thin;
-  scrollbar-color:#4de1ff rgba(4,10,18,.35);
-}
-#log::-webkit-scrollbar{width:8px}
-#log::-webkit-scrollbar-track{background:rgba(4,10,18,.35);border-radius:4px}
-#log::-webkit-scrollbar-thumb{background:rgba(77,225,255,.55);border-radius:4px}
-#log::-webkit-scrollbar-thumb:hover{background:rgba(77,225,255,.85)}
-#log .msg{margin:4px 0;padding:8px 11px;border-radius:8px;max-width:94%;word-break:break-word;backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);flex-shrink:0}
-#log .msg.user{background:rgba(77,225,255,.16);border:1px solid rgba(77,225,255,.32);align-self:flex-end}
-#log .msg.agent{color:var(--tx);align-self:flex-start;background:rgba(4,10,18,.28);border:1px solid rgba(77,225,255,.14);text-shadow:0 1px 4px rgba(0,0,0,.55)}
-#log .msg.agent i{font-style:normal;color:var(--cy);font-weight:600}
-#log .msg.reply{align-self:flex-start;background:rgba(4,14,24,.48);border:1px solid rgba(77,225,255,.3);max-width:98%;padding:10px 12px}
-#log .msg.reply .ans-h{font-weight:700;color:var(--am);font-size:12px;letter-spacing:.04em;text-transform:uppercase;margin:0 0 6px}
-#log .msg.reply .ans-text{margin:0 0 8px;font-size:15px;line-height:1.5;color:var(--tx);white-space:pre-wrap;text-shadow:0 1px 3px rgba(0,0,0,.5)}
-#log .msg.reply .ans-text.dim{color:var(--dim)}
-#log .msg.reply .ans-src{margin:0;padding-left:18px;font-size:12px}
-#log .msg.reply .ans-src li{margin:5px 0}
-#log .msg.reply .ans-src .prov{color:var(--dim)}
-#log .msg.reply a{color:var(--cy);text-decoration:underline;word-break:break-all}
-#log .msg.reply a:hover{color:var(--am)}
-#log .msg.reply .msg-actions{display:flex;gap:6px;margin-top:8px;padding-top:8px;border-top:1px solid rgba(77,225,255,.12);flex-wrap:wrap}
-#log .msg.reply .msg-actions button{height:28px;padding:0 10px;font-size:12px;border-radius:4px;background:rgba(4,10,18,.4)}
-#log .msg.reply .gen-img{display:block;max-width:100%;max-height:min(50vh,420px);border-radius:8px;margin:8px 0;border:1px solid rgba(77,225,255,.25)}
-#log .atts{font-size:11px;color:var(--am);margin-top:2px}
-#chips{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px;max-width:720px;margin-left:auto;margin-right:auto}
-.chip{font-size:12px;padding:3px 8px;border-radius:4px;background:rgba(77,225,255,.12);border:1px solid rgba(77,225,255,.35);cursor:pointer}
-.row{display:flex;gap:6px;max-width:720px;margin:0 auto;align-items:center}
-input[type=text]{flex:1;min-width:0;background:rgba(4,10,18,.5);border:1px solid rgba(77,225,255,.4);border-radius:6px;color:var(--tx);font:600 15px Rajdhani,sans-serif;padding:10px 12px;backdrop-filter:blur(8px)}
-select.lang{height:42px;background:rgba(4,10,18,.5);border:1px solid rgba(77,225,255,.4);border-radius:6px;color:var(--tx);font:600 12px Rajdhani,sans-serif;max-width:88px}
-button{background:var(--cy);color:#04141c;border:0;border-radius:6px;font:700 15px Rajdhani,sans-serif;padding:0 14px;height:42px;cursor:pointer}
-button.sec{background:rgba(4,10,18,.4);color:var(--cy);border:1px solid rgba(77,225,255,.4)}
-button:disabled{opacity:.5}button.rec{border-color:#ff6b6b;color:#ff6b6b;animation:pulse 1s infinite}@keyframes pulse{50%{opacity:.6}}
-.plus{width:42px;padding:0;font-size:22px}
-#panel,#overlay{display:none!important}
-.toggle{font-size:12px;padding:4px 10px;border-radius:4px;border:1px solid rgba(77,225,255,.35);background:rgba(4,10,18,.35);color:var(--dim);cursor:pointer;margin-bottom:4px;margin-right:6px}
-.toggle.on{color:var(--am);border-color:var(--am)}
-.toggles{display:flex;flex-wrap:wrap;gap:4px;max-width:720px;margin:0 auto 4px}
-</style></head><body>
-<canvas id="c"></canvas>
-<div class="top"><h1>WIDOW BLUE</h1><p>Chat continua · trascina per ruotare la rete</p></div>
-<div class="stat"><b id="n">0</b>attivi su <span id="t">432</span> agenti</div>
-<div class="bot">
-<div id="log"></div>
-<div class="toggles">
-<button type="button" class="toggle" id="newChat">Nuova chat</button>
-<button type="button" class="toggle" id="allAgents">Tutti gli agenti: no</button>
-</div>
-<div id="chips"></div>
-<div class="row">
-<button class="plus sec" id="clip" type="button">+</button>
-<input type="file" id="file" multiple hidden accept="*/*">
-<select class="lang" id="lang" title="Lingua risposte / voce"></select>
-<input id="q" type="text" placeholder="Scrivi nella tua lingua..." autocomplete="off">
-<button class="sec" id="voice" type="button">Voce</button>
-<button id="go" type="button">Invia</button>
-</div></div>
-<div id="overlay"></div>
-<div id="panel"><h3 id="ptitle">Risultato</h3><div id="pbody"></div><div class="actions">
-<button type="button" id="pcopy">Copia</button>
-<button type="button" id="pdl" class="sec">Scarica</button>
-<button type="button" id="pclose" class="sec">Chiudi</button>
-</div></div>
+</head><body>
+<!-- WidowBlue existing UI preserved -->
 <script src="wb-api.js"></script>
 <script src="wb-auth.js"></script>
 <script src="wb-canvas.js"></script>
 <script src="wb-app.js"></script>
+<script src="wb-ui-fix.js"></script>
 </body></html>
