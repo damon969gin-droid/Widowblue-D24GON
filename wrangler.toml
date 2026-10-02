@@ -6,6 +6,11 @@ compatibility_date = "2026-09-01"
 directory = "./frontend"
 binding = "ASSETS"
 
+# Optional: Cloudflare Workers AI for RAG generation
+# Dashboard → Worker → Settings → Bindings → Add → Workers AI → name: AI
+# [ai]
+# binding = "AI"
+
 # Auth KV (obbligatorio per auth):
 #   npx wrangler kv namespace create AUTH_KV
 # [[kv_namespaces]]
@@ -13,14 +18,9 @@ binding = "ASSETS"
 # id = "YOUR_KV_ID"
 # preview_id = "YOUR_PREVIEW_KV_ID"
 
-# IMPORTANTE: le API key devono essere SECRET, non Variables.
-# Le Variables vengono cancellate a ogni `wrangler deploy`.
-# I Secret restano dopo il deploy.
-#
+# Secrets (NON Variables plaintext):
 #   npx wrangler secret put TAVILY_API_KEY
 #   npx wrangler secret put SERPER_API_KEY
 #   npx wrangler secret put PEPPER
+#   npx wrangler secret put PERPLEXITY_API_KEY   # optional RAG generator
 #   npx wrangler secret put BRAVE_API_KEY
-#
-# Oppure Dashboard → Worker → Settings → Variables and Secrets
-# → Add → tipo "Encrypt" / Secret (NON Plaintext Variable)
