@@ -6,6 +6,7 @@
 import { modularSearch } from './search.js';
 import { runRAG } from './rag.js';
 import { isImageRequest, generateImage } from './image.js';
+import { buildConversationContext } from './context.js';
 
 const ADMIN_EMAIL = 'giorgi.daniele96@gmail.com';
 const SESSION_TTL_SEC = 60 * 60 * 24 * 7;
@@ -36,6 +37,7 @@ async function handleApi(request, env, url) {
           ok: true,
           service: 'widowblue',
           conversation: true,
+          contextLearning: true,
           rag: true,
           image: true,
           workersAI: !!env.AI,
@@ -82,57 +84,14 @@ function resolveLang(body, prompt) {
   if (lang.includes('-')) lang = lang.split('-')[0];
   if (!lang || lang === 'auto') {
     const t = String(prompt || '');
-    if (/[àèéìòù]/i.test(t) || /\b(che|cosa|quando|dove|perché|perche|come|chi|genera|immagine)\b/i.test(t)) return 'it';
+    if (/[àèéìòù]/i.test(t) || /\b(che|cosa|quando|dove|perché|perche|come|chi|genera|immagine)\b/i.test(t))
+      return 'it';
     if (/[äöüß]/i.test(t) || /\b(was|wann|wie|wer|warum)\b/i.test(t)) return 'de';
     if (/[ñ¿¡]/i.test(t) || /\b(qué|cuando|donde|quién)\b/i.test(t)) return 'es';
     if (/\b(what|when|where|who|why|how|generate|image)\b/i.test(t)) return 'en';
     return 'it';
   }
   return lang.slice(0, 2);
-}
-
-function resolveWithHistory(prompt, history) {
-  const p = String(prompt || '').trim();
-  if (!p) return { query: p, entity: null, followUp: false };
-
-  const hist = Array.isArray(history) ? history.slice(-12) : [];
-  let entity = null;
-  for (let i = hist.length - 1; i >= 0; i--) {
-    const h = hist[i];
-    if (h && h.entity) {
-      entity = String(h.entity).trim();
-      break;
-    }
-  }
-  if (!entity) {
-    for (let i = hist.length - 1; i >= 0; i--) {
-      const h = hist[i];
-      if (h && h.role === 'user' && h.text) {
-        const t = String(h.text).trim();
-        if (t.length > 8) {
-          entity = t
-            .replace(/^(quando|chi|cosa|come|dove|perché|perche|what|when|who|where|why)\b[\s\S]{0,20}/i, '')
-            .replace(/\?+$/g, '')
-            .trim();
-          if (entity.length > 2) break;
-        }
-      }
-    }
-  }
-
-  const followUp =
-    p.length < 70 ||
-    /^(e |ed |ma |poi |anche |quindi |invece |però |pero |e lui|e lei|e dopo|and |but |then |also |why |how |when |where )/i.test(
-      p
-    ) ||
-    /^(quando|dove|come|perché|perche|chi|cosa)\b/i.test(p);
-
-  let query = p;
-  if (followUp && entity && !p.toLowerCase().includes(entity.toLowerCase().slice(0, 12))) {
-    query = entity + ' — ' + p;
-  }
-
-  return { query, entity, followUp };
 }
 
 async function handleSearch(request, env, cors) {
@@ -142,7 +101,8 @@ async function handleSearch(request, env, cors) {
   const history = body.history || [];
   const useRag = body.rag !== false;
   if (!raw) return json({ error: 'empty_query' }, 400, cors);
-  const resolved = resolveWithHistory(raw, history);
+
+  const ctx = buildConversationContext(raw, history);
   const lang = resolveLang(body, raw);
   await logSpider(env, 'search_query', null, request);
 
@@ -153,7 +113,7 @@ async function handleSearch(request, env, cors) {
         ok: true,
         mode: 'image',
         lang,
-        answer: { text: img.message, title: 'Image', provider: img.provider },
+        answer: { text: img.message, title: '', provider: img.provider },
         image: img,
         results: [],
         providers: [],
@@ -164,18 +124,20 @@ async function handleSearch(request, env, cors) {
   }
 
   if (useRag) {
-    const data = await runRAG(resolved.query, { deep, env, lang, history });
-    data.resolvedQuery = resolved.query;
-    data.followUp = resolved.followUp;
-    data.contextEntity = resolved.entity;
+    const data = await runRAG(ctx.query, { deep, env, lang, history, context: ctx });
+    data.resolvedQuery = ctx.query;
+    data.followUp = ctx.followUp;
+    data.contextEntity = ctx.entity;
+    data.contextTopic = ctx.topic;
+    data.contextDomain = ctx.domain;
     data.lang = lang;
     return json(data, 200, cors);
   }
 
-  const data = await modularSearch(resolved.query, { deep, env, lang });
-  data.resolvedQuery = resolved.query;
-  data.followUp = resolved.followUp;
-  data.contextEntity = resolved.entity;
+  const data = await modularSearch(ctx.query, { deep, env, lang, context: ctx });
+  data.resolvedQuery = ctx.query;
+  data.followUp = ctx.followUp;
+  data.contextEntity = ctx.entity;
   data.lang = lang;
   return json(data, 200, cors);
 }
@@ -186,13 +148,15 @@ async function handleRAG(request, env, cors) {
   const deep = !!body.deep;
   const history = body.history || [];
   if (!raw) return json({ error: 'empty_query' }, 400, cors);
-  const resolved = resolveWithHistory(raw, history);
+  const ctx = buildConversationContext(raw, history);
   const lang = resolveLang(body, raw);
   await logSpider(env, 'rag_query', null, request);
-  const data = await runRAG(resolved.query, { deep, env, lang, history });
-  data.resolvedQuery = resolved.query;
-  data.followUp = resolved.followUp;
-  data.contextEntity = resolved.entity;
+  const data = await runRAG(ctx.query, { deep, env, lang, history, context: ctx });
+  data.resolvedQuery = ctx.query;
+  data.followUp = ctx.followUp;
+  data.contextEntity = ctx.entity;
+  data.contextTopic = ctx.topic;
+  data.contextDomain = ctx.domain;
   return json(data, 200, cors);
 }
 
@@ -215,7 +179,7 @@ async function handleOrchestrate(request, env, cors) {
   const history = body.history || [];
   if (!prompt && !attachments.length) return json({ error: 'empty_prompt' }, 400, cors);
 
-  const resolved = resolveWithHistory(prompt, history);
+  const ctx = buildConversationContext(prompt, history);
   const lang = resolveLang(body, prompt);
 
   if (isImageRequest(prompt)) {
@@ -228,7 +192,7 @@ async function handleOrchestrate(request, env, cors) {
         search: {
           ok: true,
           mode: 'image',
-          answer: { text: img.message, title: 'Image', provider: img.provider, grounded: false },
+          answer: { text: img.message, title: '', provider: img.provider, grounded: false },
           results: [],
           lang,
         },
@@ -238,9 +202,11 @@ async function handleOrchestrate(request, env, cors) {
           followUp: false,
           resolvedQuery: prompt,
           entity: null,
+          topic: null,
+          domain: null,
           historyTurns: Array.isArray(history) ? history.length : 0,
         },
-        plan: { mode: 'image', steps: ['Generate image'], stack: [], sources: [] },
+        plan: { mode: 'image', steps: [], stack: [], sources: [] },
       },
       200,
       cors
@@ -248,19 +214,20 @@ async function handleOrchestrate(request, env, cors) {
   }
 
   let search = null;
-  if (doSearch && resolved.query) {
-    search = await runRAG(resolved.query, { deep, env, lang, history });
-    search.resolvedQuery = resolved.query;
-    search.followUp = resolved.followUp;
-    search.contextEntity = resolved.entity;
+  if (doSearch && ctx.query) {
+    search = await runRAG(ctx.query, { deep, env, lang, history, context: ctx });
+    search.resolvedQuery = ctx.query;
+    search.followUp = ctx.followUp;
+    search.contextEntity = ctx.entity;
+    search.contextTopic = ctx.topic;
+    search.contextDomain = ctx.domain;
     search.lang = lang;
   }
 
-  let entity =
-    (search && search.answer && search.answer.title) ||
-    resolved.entity ||
-    null;
-  if (entity) entity = String(entity).replace(/\s*\((IT|EN|[A-Z]{2})\)\s*$/i, '').trim();
+  let entity = ctx.entity || null;
+  if (!entity && search && search.answer && search.answer.title) {
+    entity = String(search.answer.title).replace(/\s*\((IT|EN|[A-Z]{2})\)\s*$/i, '').trim();
+  }
 
   const plan = buildPlan(prompt, attachments, deep, search);
   return json(
@@ -269,9 +236,11 @@ async function handleOrchestrate(request, env, cors) {
       plan,
       search,
       conversation: {
-        followUp: resolved.followUp,
-        resolvedQuery: resolved.query,
+        followUp: ctx.followUp,
+        resolvedQuery: ctx.query,
         entity,
+        topic: ctx.topic,
+        domain: ctx.domain,
         lang,
         historyTurns: Array.isArray(history) ? history.length : 0,
         mode: 'rag',
