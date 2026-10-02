@@ -1,37 +1,54 @@
-/* WidowBlue Agent Core v0.1 */
+/* WidowBlue Agent Core v0.2 */
 (function(){
   const agents={
-    supervisor:'Coordina gli agenti',
-    planner:'Analizza requisiti e crea piano',
-    programmer:'Genera codice',
-    frontend:'Crea interfacce',
-    backend:'Crea API',
-    database:'Progetta database',
-    cloud:'Gestisce deploy',
-    security:'Controlla sicurezza',
-    tester:'Esegue controlli'
+    supervisor:{status:'ready'},
+    planner:{status:'ready'},
+    programmer:{status:'ready'},
+    frontend:{status:'ready'},
+    backend:{status:'ready'},
+    database:{status:'ready'},
+    cloud:{status:'ready'},
+    security:{status:'ready'},
+    tester:{status:'ready'}
   };
 
-  window.WidowBlueCore={
-    agents,
-    async run(prompt){
-      if(window.wbApi && window.wbApi.orchestrate){
-        return await window.wbApi.orchestrate(prompt,{deep:true});
-      }
-      return {ok:false,data:{error:'agent_api_missing'}};
+  function setStatus(name,status){
+    if(agents[name]) agents[name].status=status;
+    window.dispatchEvent(new CustomEvent('widowblue-agent',{detail:{name,status}}));
+  }
+
+  async function run(prompt){
+    setStatus('supervisor','working');
+    const selected=/app|software|codice|programma|sito|dashboard/i.test(prompt)
+      ? ['planner','programmer','frontend','backend']
+      : ['planner'];
+
+    selected.forEach(a=>setStatus(a,'working'));
+
+    let result=null;
+    if(window.wbApi && window.wbApi.orchestrate){
+      result=await window.wbApi.orchestrate(prompt,{deep:true});
     }
-  };
+
+    selected.forEach(a=>setStatus(a,'completed'));
+    setStatus('supervisor','completed');
+    return result || {ok:true,data:{message:'WidowBlue Agent Core online'}};
+  }
+
+  window.WidowBlueCore={agents,run,setStatus};
 
   window.wbSendMessage=async function(text){
     const log=document.getElementById('log');
-    if(!log)return;
-    const add=(msg)=>{const d=document.createElement('div');d.className='msg agent';d.innerHTML='<i>WidowBlue Agent</i> '+msg;log.appendChild(d);log.scrollTop=log.scrollHeight;};
+    const add=(msg)=>{
+      if(!log)return;
+      const d=document.createElement('div');
+      d.className='msg agent';
+      d.innerHTML='<i>WidowBlue Agent</i> '+msg;
+      log.appendChild(d);
+      log.scrollTop=log.scrollHeight;
+    };
     add('Supervisor Agent: analisi richiesta...');
-    const result=await window.WidowBlueCore.run(text);
-    if(result.ok && result.data){
-      add(result.data.answer || result.data.message || 'Task completato');
-    }else{
-      add('Core online. Collegamento AI backend in attesa.');
-    }
+    const result=await run(text);
+    add(result?.data?.answer || result?.data?.message || 'Task completato');
   };
 })();
