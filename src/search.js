@@ -1,7 +1,7 @@
 /**
  * WidowBlue – ricerca web modulare multi-provider
- * Priorità: Google CSE + Serper (Google SERP) → Tavily → Wikipedia → DDG
- * Lingua: preferisce Wikipedia + Serper nella lingua utente
+ * Priorità: Google CSE + Serper → Tavily → Wikipedia → DDG
+ * Ranking + filtro pertinenza
  */
 
 const UA = 'WidowBlueBot/0.9 (+https://github.com/damon969gin-droid/Widowblue-D24GON; research; respectful)';
@@ -54,13 +54,25 @@ function scoreResult(r, qTokens) {
   if (r.provider === 'brave' || r.provider === 'bing') score += 12;
   if (/disambigua|disambiguation/i.test(title + sn)) score -= 25;
   if (/procaccini|pittore|painter/i.test(title + sn)) score -= 10;
-  if (/classifica|serie a|capolista|standings/i.test(title + sn)) score += 14;
+  if (/classifica|serie a|capolista|standings/i.test(title + sn)) score += 18;
+  if (qTokens.length >= 2) {
+    let hits = 0;
+    for (const t of qTokens) if (title.includes(t) || sn.includes(t)) hits++;
+    if (hits === 0) score -= 20;
+    else score += hits * 3;
+  }
   return score;
 }
 
 function focusAnswer(query, text, title) {
   const ql = String(query || '').toLowerCase();
-  const t = String(text || '');
+  let t = String(text || '')
+    .replace(/#{1,6}\s*/g, '')
+    .replace(/\[\.\.\.\]/g, ' ')
+    .replace(/\*{1,2}/g, '')
+    .replace(/What Are [^?\n]+\?/gi, '')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
   const name = String(title || '')
     .replace(/\s*\([A-Z]{2}\)\s*$/i, '')
     .replace(/^Sintesi\s+(Tavily|Perplexity|Serper|Google).*$/i, '')
@@ -71,11 +83,7 @@ function focusAnswer(query, text, title) {
       /nato(?:\s+a)?\s+[^.]{5,90}/i,
       /nata(?:\s+a)?\s+[^.]{5,90}/i,
       /born\s+(?:on\s+)?[^.]{5,90}/i,
-      /\([^)]*?\d{1,2}\s+[a-zà-ù.]+\s+\d{1,4}\s*a\.?\s*C\.?[^)]*\)/i,
-      /\([^)]*?\d{1,4}\s*(?:BC|a\.?\s*C\.?)[^)]*\)/i,
-      /,\s*\d{1,2}\s+[A-Za-zà-ù.]+\s+\d{1,4}\s*a\.?\s*C\.?/i,
-      /\d{1,2}\s+(?:gennaio|febbraio|marzo|aprile|maggio|giugno|luglio|agosto|settembre|ottobre|novembre|dicembre)\s+\d{1,4}\s*a\.?\s*C\.?/i,
-      /\d{1,2}\s+(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,4}\s*(?:BC)?/i,
+      /\d{1,2}\s+(?:gennaio|febbraio|marzo|aprile|maggio|giugno|luglio|agosto|settembre|ottobre|novembre|dicembre)\s+\d{1,4}/i,
     ];
     for (const re of patterns) {
       const m = t.match(re);
@@ -93,7 +101,6 @@ function focusAnswer(query, text, title) {
   }
 
   if (t.length <= 900) return t.trim();
-
   const sentences = t.split(/(?<=[.!?])\s+/).filter(Boolean);
   let out = '';
   for (const s of sentences.slice(0, 6)) {
@@ -104,70 +111,31 @@ function focusAnswer(query, text, title) {
 }
 
 function pickBestAnswer(unique, q) {
-  // Prefer Google / Serper (ricerca Google normale)
   const googleLike = unique.find(
-    (r) =>
-      (r.provider === 'google' || r.provider === 'serper') &&
-      r.kind === 'summary' &&
-      r.snippet &&
-      r.snippet.length > 20
+    (r) => (r.provider === 'google' || r.provider === 'serper') && r.kind === 'summary' && r.snippet && r.snippet.length > 20
   );
   if (googleLike) {
-    return {
-      text: focusAnswer(q, googleLike.snippet, googleLike.title),
-      title: googleLike.title,
-      url: googleLike.url,
-      provider: googleLike.provider,
-    };
+    return { text: focusAnswer(q, googleLike.snippet, googleLike.title), title: googleLike.title, url: googleLike.url, provider: googleLike.provider };
   }
-  const webSummary = unique.find(
-    (r) => WEB_PROVIDERS.has(r.provider) && r.kind === 'summary' && r.snippet && r.snippet.length > 20
-  );
+  const webSummary = unique.find((r) => WEB_PROVIDERS.has(r.provider) && r.kind === 'summary' && r.snippet && r.snippet.length > 20);
   if (webSummary) {
-    return {
-      text: focusAnswer(q, webSummary.snippet, webSummary.title),
-      title: webSummary.title,
-      url: webSummary.url,
-      provider: webSummary.provider,
-    };
+    return { text: focusAnswer(q, webSummary.snippet, webSummary.title), title: webSummary.title, url: webSummary.url, provider: webSummary.provider };
   }
-  const googleHit = unique.find(
-    (r) => (r.provider === 'google' || r.provider === 'serper') && r.snippet && r.snippet.length > 40
-  );
+  const googleHit = unique.find((r) => (r.provider === 'google' || r.provider === 'serper') && r.snippet && r.snippet.length > 40);
   if (googleHit) {
-    return {
-      text: focusAnswer(q, googleHit.snippet, googleHit.title),
-      title: googleHit.title,
-      url: googleHit.url,
-      provider: googleHit.provider,
-    };
+    return { text: focusAnswer(q, googleHit.snippet, googleHit.title), title: googleHit.title, url: googleHit.url, provider: googleHit.provider };
   }
   const webHit = unique.find((r) => WEB_PROVIDERS.has(r.provider) && r.snippet && r.snippet.length > 40);
   if (webHit) {
-    return {
-      text: focusAnswer(q, webHit.snippet, webHit.title),
-      title: webHit.title,
-      url: webHit.url,
-      provider: webHit.provider,
-    };
+    return { text: focusAnswer(q, webHit.snippet, webHit.title), title: webHit.title, url: webHit.url, provider: webHit.provider };
   }
   const wiki = unique.find((r) => r.provider === 'wikipedia' && r.kind === 'summary' && r.snippet);
   if (wiki) {
-    return {
-      text: focusAnswer(q, wiki.snippet, wiki.title),
-      title: wiki.title,
-      url: wiki.url,
-      provider: wiki.provider,
-    };
+    return { text: focusAnswer(q, wiki.snippet, wiki.title), title: wiki.title, url: wiki.url, provider: wiki.provider };
   }
   const any = unique.find((r) => r.snippet && r.snippet.length > 40);
   if (any) {
-    return {
-      text: focusAnswer(q, any.snippet, any.title),
-      title: any.title,
-      url: any.url,
-      provider: any.provider,
-    };
+    return { text: focusAnswer(q, any.snippet, any.title), title: any.title, url: any.url, provider: any.provider };
   }
   return null;
 }
@@ -185,13 +153,9 @@ export async function modularSearch(query, opts = {}) {
   const results = [];
   const errors = [];
 
-  // Google-first: CSE + Serper (Google SERP) prioritari
   const jobs = [];
-
   if (env.GOOGLE_API_KEY && env.GOOGLE_CSE_ID) {
-    jobs.push(
-      runProvider('google', () => searchGoogle(q, env.GOOGLE_API_KEY, env.GOOGLE_CSE_ID, deep ? 10 : 8))
-    );
+    jobs.push(runProvider('google', () => searchGoogle(q, env.GOOGLE_API_KEY, env.GOOGLE_CSE_ID, deep ? 10 : 8)));
   }
   if (env.SERPER_API_KEY) {
     jobs.push(runProvider('serper', () => searchSerper(q, env.SERPER_API_KEY, deep ? 10 : 8, lang)));
@@ -201,15 +165,9 @@ export async function modularSearch(query, opts = {}) {
   }
   jobs.push(runProvider('wikipedia', () => searchWikipedia(q, qNorm, qTokens, lang)));
   jobs.push(runProvider('duckduckgo', () => searchDuckDuckGo(qNorm || q)));
-  if (env.BRAVE_API_KEY) {
-    jobs.push(runProvider('brave', () => searchBrave(q, env.BRAVE_API_KEY, deep ? 10 : 5)));
-  }
-  if (env.BING_API_KEY) {
-    jobs.push(runProvider('bing', () => searchBing(q, env.BING_API_KEY, deep ? 10 : 5, lang)));
-  }
-  if (env.PERPLEXITY_API_KEY) {
-    jobs.push(runProvider('perplexity', () => searchPerplexity(q, env.PERPLEXITY_API_KEY, deep, lang)));
-  }
+  if (env.BRAVE_API_KEY) jobs.push(runProvider('brave', () => searchBrave(q, env.BRAVE_API_KEY, deep ? 10 : 5)));
+  if (env.BING_API_KEY) jobs.push(runProvider('bing', () => searchBing(q, env.BING_API_KEY, deep ? 10 : 5, lang)));
+  if (env.PERPLEXITY_API_KEY) jobs.push(runProvider('perplexity', () => searchPerplexity(q, env.PERPLEXITY_API_KEY, deep, lang)));
 
   const settled = await Promise.all(jobs);
   for (const s of settled) {
@@ -228,6 +186,17 @@ export async function modularSearch(query, opts = {}) {
     unique.push(r);
   }
   unique.sort((a, b) => (b._score || 0) - (a._score || 0));
+  const minScore = deep ? 8 : 12;
+  unique = unique.filter((r) => (r._score || 0) >= minScore || r.kind === 'summary');
+  if (!unique.length) {
+    unique = results
+      .map((r) => {
+        r._score = scoreResult(r, qTokens);
+        return r;
+      })
+      .sort((a, b) => (b._score || 0) - (a._score || 0))
+      .slice(0, 6);
+  }
   unique = unique.slice(0, deep ? 12 : 8);
 
   const answer = pickBestAnswer(unique, q);
@@ -246,11 +215,7 @@ export async function modularSearch(query, opts = {}) {
     results: unique.map(({ _score, ...rest }) => rest),
     policy: {
       respectful: true,
-      notes: [
-        'Priorità Google CSE / Serper (SERP Google)',
-        'Lingua: ' + lang,
-        'Poi Tavily, Wikipedia, DDG',
-      ],
+      notes: ['Priorità Google CSE / Serper', 'Lingua: ' + lang, 'Filtro pertinenza attivo'],
     },
     fetchedAt: Date.now(),
   };
@@ -267,17 +232,12 @@ async function runProvider(name, fn) {
 }
 
 function withTimeout(promise, ms) {
-  return Promise.race([
-    promise,
-    new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), ms)),
-  ]);
+  return Promise.race([promise, new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), ms))]);
 }
 
 async function wikiOpenSearch(lang, term) {
   const url =
-    'https://' +
-    lang +
-    '.wikipedia.org/w/api.php?action=opensearch&limit=5&namespace=0&format=json&origin=*&search=' +
+    'https://' + lang + '.wikipedia.org/w/api.php?action=opensearch&limit=5&namespace=0&format=json&origin=*&search=' +
     encodeURIComponent(term);
   const res = await fetch(url, { headers: { 'User-Agent': UA, Accept: 'application/json' } });
   if (!res.ok) throw new Error('wikipedia-' + lang + ' HTTP ' + res.status);
@@ -298,9 +258,7 @@ async function wikiOpenSearch(lang, term) {
 
 async function wikiListSearch(lang, term) {
   const searchUrl =
-    'https://' +
-    lang +
-    '.wikipedia.org/w/api.php?action=query&list=search&srlimit=5&format=json&origin=*&srsearch=' +
+    'https://' + lang + '.wikipedia.org/w/api.php?action=query&list=search&srlimit=5&format=json&origin=*&srsearch=' +
     encodeURIComponent(term);
   const res = await fetch(searchUrl, { headers: { 'User-Agent': UA, Accept: 'application/json' } });
   if (!res.ok) throw new Error('wikipedia-list-' + lang + ' HTTP ' + res.status);
@@ -318,14 +276,8 @@ async function wikiListSearch(lang, term) {
 }
 
 async function wikiSummary(lang, title) {
-  const url =
-    'https://' +
-    lang +
-    '.wikipedia.org/api/rest_v1/page/summary/' +
-    encodeURIComponent(title.replace(/ /g, '_'));
-  const res = await fetch(url, {
-    headers: { 'User-Agent': UA, Accept: 'application/json' },
-  });
+  const url = 'https://' + lang + '.wikipedia.org/api/rest_v1/page/summary/' + encodeURIComponent(title.replace(/ /g, '_'));
+  const res = await fetch(url, { headers: { 'User-Agent': UA, Accept: 'application/json' } });
   if (!res.ok) return null;
   const data = await res.json();
   if (data.type === 'disambiguation') return null;
@@ -335,8 +287,7 @@ async function wikiSummary(lang, title) {
     provider: 'wikipedia',
     kind: 'summary',
     title: (data.title || title) + ' (' + String(lang).toUpperCase() + ')',
-    url:
-      (data.content_urls && data.content_urls.desktop && data.content_urls.desktop.page) ||
+    url: (data.content_urls && data.content_urls.desktop && data.content_urls.desktop.page) ||
       'https://' + lang + '.wikipedia.org/wiki/' + encodeURIComponent(title.replace(/ /g, '_')),
     snippet: extract,
     lang,
@@ -369,14 +320,9 @@ async function searchWikipedia(q, qNorm, qTokens, lang = 'it') {
     }
   }
   out.sort((a, b) => (b._score || 0) - (a._score || 0));
-
   const top = out.slice(0, 4);
   const summaries = await Promise.all(
-    top.map((r) =>
-      r.wikiTitle && r.lang
-        ? wikiSummary(r.lang, r.wikiTitle).catch(() => null)
-        : Promise.resolve(null)
-    )
+    top.map((r) => (r.wikiTitle && r.lang ? wikiSummary(r.lang, r.wikiTitle).catch(() => null) : Promise.resolve(null)))
   );
   const enriched = [];
   const seen2 = new Set();
@@ -397,40 +343,17 @@ async function searchWikipedia(q, qNorm, qTokens, lang = 'it') {
 }
 
 async function searchDuckDuckGo(q) {
-  const url =
-    'https://api.duckduckgo.com/?format=json&no_html=1&skip_disambig=1&q=' + encodeURIComponent(q);
+  const url = 'https://api.duckduckgo.com/?format=json&no_html=1&skip_disambig=1&q=' + encodeURIComponent(q);
   const res = await fetch(url, { headers: { 'User-Agent': UA, Accept: 'application/json' } });
   if (!res.ok) throw new Error('duckduckgo HTTP ' + res.status);
   const data = await res.json();
   const out = [];
   if (data.AbstractText) {
-    out.push({
-      provider: 'duckduckgo',
-      kind: 'summary',
-      title: data.Heading || q,
-      url: data.AbstractURL || '',
-      snippet: data.AbstractText,
-      fetchedAt: Date.now(),
-    });
-  }
-  if (data.Definition) {
-    out.push({
-      provider: 'duckduckgo',
-      title: data.Heading || 'Definition',
-      url: data.DefinitionURL || data.AbstractURL || '',
-      snippet: data.Definition,
-      fetchedAt: Date.now(),
-    });
+    out.push({ provider: 'duckduckgo', kind: 'summary', title: data.Heading || q, url: data.AbstractURL || '', snippet: data.AbstractText, fetchedAt: Date.now() });
   }
   for (const item of data.RelatedTopics || []) {
     if (item.Text && item.FirstURL) {
-      out.push({
-        provider: 'duckduckgo',
-        title: (item.Text || '').slice(0, 80),
-        url: item.FirstURL,
-        snippet: item.Text,
-        fetchedAt: Date.now(),
-      });
+      out.push({ provider: 'duckduckgo', title: (item.Text || '').slice(0, 80), url: item.FirstURL, snippet: item.Text, fetchedAt: Date.now() });
     }
   }
   return out.slice(0, 6);
@@ -439,44 +362,17 @@ async function searchDuckDuckGo(q) {
 async function searchTavily(q, apiKey, deep) {
   const res = await fetch('https://api.tavily.com/search', {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Accept: 'application/json',
-      'User-Agent': UA,
-    },
-    body: JSON.stringify({
-      api_key: apiKey,
-      query: q,
-      search_depth: deep ? 'advanced' : 'basic',
-      max_results: deep ? 8 : 5,
-      include_answer: true,
-      include_raw_content: false,
-    }),
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json', 'User-Agent': UA },
+    body: JSON.stringify({ api_key: apiKey, query: q, search_depth: deep ? 'advanced' : 'basic', max_results: deep ? 8 : 5, include_answer: true, include_raw_content: false }),
   });
-  if (!res.ok) {
-    const errBody = await res.text().catch(() => '');
-    throw new Error('tavily HTTP ' + res.status + (errBody ? ': ' + errBody.slice(0, 120) : ''));
-  }
+  if (!res.ok) throw new Error('tavily HTTP ' + res.status);
   const data = await res.json();
   const out = [];
   if (data.answer) {
-    out.push({
-      provider: 'tavily',
-      kind: 'summary',
-      title: 'Sintesi Tavily',
-      url: (data.results && data.results[0] && data.results[0].url) || 'https://tavily.com/',
-      snippet: String(data.answer).slice(0, 900),
-      fetchedAt: Date.now(),
-    });
+    out.push({ provider: 'tavily', kind: 'summary', title: 'Sintesi Tavily', url: (data.results && data.results[0] && data.results[0].url) || 'https://tavily.com/', snippet: String(data.answer).slice(0, 900), fetchedAt: Date.now() });
   }
   for (const r of data.results || []) {
-    out.push({
-      provider: 'tavily',
-      title: r.title || '',
-      url: r.url || '',
-      snippet: r.content || r.snippet || '',
-      fetchedAt: Date.now(),
-    });
+    out.push({ provider: 'tavily', title: r.title || '', url: r.url || '', snippet: r.content || r.snippet || '', fetchedAt: Date.now() });
   }
   return out;
 }
@@ -484,182 +380,67 @@ async function searchTavily(q, apiKey, deep) {
 async function searchSerper(q, apiKey, num = 5, lang = 'it') {
   const res = await fetch('https://google.serper.dev/search', {
     method: 'POST',
-    headers: {
-      'X-API-KEY': apiKey,
-      'Content-Type': 'application/json',
-      Accept: 'application/json',
-      'User-Agent': UA,
-    },
-    body: JSON.stringify({
-      q,
-      num: Math.min(Math.max(1, num), 10),
-      gl: lang || 'it',
-      hl: lang || 'it',
-      autocorrect: true,
-    }),
+    headers: { 'X-API-KEY': apiKey, 'Content-Type': 'application/json', Accept: 'application/json', 'User-Agent': UA },
+    body: JSON.stringify({ q, num: Math.min(Math.max(1, num), 10), gl: lang || 'it', hl: lang || 'it', autocorrect: true }),
   });
-  if (!res.ok) {
-    const errBody = await res.text().catch(() => '');
-    throw new Error('serper HTTP ' + res.status + (errBody ? ': ' + errBody.slice(0, 120) : ''));
-  }
+  if (!res.ok) throw new Error('serper HTTP ' + res.status);
   const data = await res.json();
   const out = [];
   if (data.answerBox && (data.answerBox.answer || data.answerBox.snippet)) {
-    out.push({
-      provider: 'serper',
-      kind: 'summary',
-      title: data.answerBox.title || 'Google Answer',
-      url: data.answerBox.link || '',
-      snippet: data.answerBox.answer || data.answerBox.snippet || '',
-      fetchedAt: Date.now(),
-    });
+    out.push({ provider: 'serper', kind: 'summary', title: data.answerBox.title || 'Google Answer', url: data.answerBox.link || '', snippet: data.answerBox.answer || data.answerBox.snippet || '', fetchedAt: Date.now() });
   }
   if (data.knowledgeGraph && data.knowledgeGraph.description) {
-    out.push({
-      provider: 'serper',
-      kind: 'summary',
-      title: data.knowledgeGraph.title || 'Knowledge Graph',
-      url: data.knowledgeGraph.descriptionLink || data.knowledgeGraph.website || '',
-      snippet: data.knowledgeGraph.description,
-      fetchedAt: Date.now(),
-    });
+    out.push({ provider: 'serper', kind: 'summary', title: data.knowledgeGraph.title || 'Knowledge Graph', url: data.knowledgeGraph.descriptionLink || data.knowledgeGraph.website || '', snippet: data.knowledgeGraph.description, fetchedAt: Date.now() });
   }
   for (const r of data.organic || []) {
-    out.push({
-      provider: 'serper',
-      title: r.title || '',
-      url: r.link || '',
-      snippet: r.snippet || '',
-      fetchedAt: Date.now(),
-    });
+    out.push({ provider: 'serper', title: r.title || '', url: r.link || '', snippet: r.snippet || '', fetchedAt: Date.now() });
   }
   return out;
 }
 
 async function searchBrave(q, apiKey, count = 5) {
-  const url =
-    'https://api.search.brave.com/res/v1/web/search?q=' +
-    encodeURIComponent(q) +
-    '&count=' +
-    count;
-  const res = await fetch(url, {
-    headers: {
-      Accept: 'application/json',
-      'X-Subscription-Token': apiKey,
-      'User-Agent': UA,
-    },
-  });
+  const url = 'https://api.search.brave.com/res/v1/web/search?q=' + encodeURIComponent(q) + '&count=' + count;
+  const res = await fetch(url, { headers: { Accept: 'application/json', 'X-Subscription-Token': apiKey, 'User-Agent': UA } });
   if (!res.ok) throw new Error('brave HTTP ' + res.status);
   const data = await res.json();
-  return ((data.web && data.web.results) || []).map((r) => ({
-    provider: 'brave',
-    title: r.title || '',
-    url: r.url || '',
-    snippet: r.description || '',
-    fetchedAt: Date.now(),
-  }));
+  return ((data.web && data.web.results) || []).map((r) => ({ provider: 'brave', title: r.title || '', url: r.url || '', snippet: r.description || '', fetchedAt: Date.now() }));
 }
 
 async function searchGoogle(q, apiKey, cx, num = 5) {
   const n = Math.min(Math.max(1, num), 10);
-  const url =
-    'https://www.googleapis.com/customsearch/v1?key=' +
-    encodeURIComponent(apiKey) +
-    '&cx=' +
-    encodeURIComponent(cx) +
-    '&q=' +
-    encodeURIComponent(q) +
-    '&num=' +
-    n;
-  const res = await fetch(url, {
-    headers: { Accept: 'application/json', 'User-Agent': UA },
-  });
-  if (!res.ok) {
-    const errBody = await res.text().catch(() => '');
-    throw new Error('google HTTP ' + res.status + (errBody ? ': ' + errBody.slice(0, 120) : ''));
-  }
+  const url = 'https://www.googleapis.com/customsearch/v1?key=' + encodeURIComponent(apiKey) + '&cx=' + encodeURIComponent(cx) + '&q=' + encodeURIComponent(q) + '&num=' + n;
+  const res = await fetch(url, { headers: { Accept: 'application/json', 'User-Agent': UA } });
+  if (!res.ok) throw new Error('google HTTP ' + res.status);
   const data = await res.json();
-  return (data.items || []).map((item) => ({
-    provider: 'google',
-    title: item.title || '',
-    url: item.link || '',
-    snippet: item.snippet || '',
-    fetchedAt: Date.now(),
-  }));
+  return (data.items || []).map((item) => ({ provider: 'google', title: item.title || '', url: item.link || '', snippet: item.snippet || '', fetchedAt: Date.now() }));
 }
 
 async function searchBing(q, apiKey, count = 5, lang = 'it') {
-  const n = Math.min(Math.max(1, count), 50);
-  const mkt =
-    lang === 'en' ? 'en-US' : lang === 'de' ? 'de-DE' : lang === 'es' ? 'es-ES' : lang === 'fr' ? 'fr-FR' : 'it-IT';
-  const url =
-    'https://api.bing.microsoft.com/v7.0/search?q=' +
-    encodeURIComponent(q) +
-    '&count=' +
-    n +
-    '&mkt=' +
-    mkt +
-    '&textDecorations=false&textFormat=Raw';
-  const res = await fetch(url, {
-    headers: {
-      'Ocp-Apim-Subscription-Key': apiKey,
-      Accept: 'application/json',
-      'User-Agent': UA,
-    },
-  });
-  if (!res.ok) {
-    const errBody = await res.text().catch(() => '');
-    throw new Error('bing HTTP ' + res.status + (errBody ? ': ' + errBody.slice(0, 120) : ''));
-  }
+  const n = Math.min(Math.max(1, count), 10);
+  const url = 'https://api.bing.microsoft.com/v7.0/search?q=' + encodeURIComponent(q) + '&count=' + n + '&mkt=' + (lang === 'it' ? 'it-IT' : 'en-US');
+  const res = await fetch(url, { headers: { 'Ocp-Apim-Subscription-Key': apiKey, Accept: 'application/json', 'User-Agent': UA } });
+  if (!res.ok) throw new Error('bing HTTP ' + res.status);
   const data = await res.json();
-  const web = (data.webPages && data.webPages.value) || [];
-  return web.map((r) => ({
-    provider: 'bing',
-    title: r.name || '',
-    url: r.url || '',
-    snippet: r.snippet || '',
-    fetchedAt: Date.now(),
-  }));
+  return ((data.webPages && data.webPages.value) || []).map((r) => ({ provider: 'bing', title: r.name || '', url: r.url || '', snippet: r.snippet || '', fetchedAt: Date.now() }));
 }
 
 async function searchPerplexity(q, apiKey, deep, lang = 'it') {
-  const model = deep ? 'sonar-pro' : 'sonar';
   const res = await fetch('https://api.perplexity.ai/chat/completions', {
     method: 'POST',
-    headers: {
-      Authorization: 'Bearer ' + apiKey,
-      'Content-Type': 'application/json',
-    },
+    headers: { Authorization: 'Bearer ' + apiKey, 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      model,
+      model: deep ? 'sonar-pro' : 'sonar',
       messages: [
-        {
-          role: 'system',
-          content:
-            lang === 'it'
-              ? 'Rispondi in italiano in modo preciso e breve.'
-              : 'Reply precisely and briefly in ' + lang + '.',
-        },
+        { role: 'system', content: 'Answer in ' + lang + '. Be concise and factual.' },
         { role: 'user', content: q },
       ],
       temperature: 0.2,
-      max_tokens: 500,
+      max_tokens: 600,
     }),
   });
   if (!res.ok) throw new Error('perplexity HTTP ' + res.status);
   const data = await res.json();
-  const text =
-    (data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content) ||
-    '';
+  const text = (data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content) || '';
   if (!text) return [];
-  return [
-    {
-      provider: 'perplexity',
-      kind: 'summary',
-      title: 'Sintesi Perplexity',
-      url: 'https://www.perplexity.ai/',
-      snippet: String(text).slice(0, 900),
-      fetchedAt: Date.now(),
-    },
-  ];
+  return [{ provider: 'perplexity', kind: 'summary', title: 'Sintesi Perplexity', url: 'https://www.perplexity.ai/', snippet: text.slice(0, 900), fetchedAt: Date.now() }];
 }
