@@ -149,14 +149,14 @@ function draw(){
     if(!(fullNet||strength>.04))continue;
     const A=P[a],B=P[b];if(!A||!B)continue;
     if(fullNet){
-      // linee sottili, niente neon
-      x.globalAlpha=.06+strength*.12;
-      x.strokeStyle=strength>.4?'rgba(200,160,90,.55)':'rgba(80,160,180,.45)';
-      x.lineWidth=.35+strength*.35;
+      // linee più marcate, senza glow/neon
+      x.globalAlpha=.22+strength*.32;
+      x.strokeStyle=strength>.4?'rgba(220,170,90,.9)':'rgba(90,185,205,.85)';
+      x.lineWidth=1.15+strength*1.1;
     }else{
-      x.globalAlpha=.22+strength*.35;
-      x.strokeStyle='rgba(200,150,70,.7)';
-      x.lineWidth=.6+strength*.8;
+      x.globalAlpha=.28+strength*.4;
+      x.strokeStyle='rgba(210,160,70,.85)';
+      x.lineWidth=1+strength*1.1;
     }
     x.beginPath();x.moveTo(A[0],A[1]);x.lineTo(B[0],B[1]);x.stroke();
   }
@@ -165,9 +165,9 @@ function draw(){
     if(sa<.12&&sb<.12&&!fullNet)continue;
     if(!fullNet&&(sa<.12||sb<.12))continue;
     const A=P[i],B=P[j];
-    x.globalAlpha=fullNet?.1:Math.min(.75,.22+Math.max(sa,sb)*.4);
-    x.strokeStyle=fullNet?'rgba(180,150,90,.5)':'rgba(200,150,70,.75)';
-    x.lineWidth=fullNet?.45:.7+Math.max(sa,sb)*.6;
+    x.globalAlpha=fullNet?.35:Math.min(.9,.28+Math.max(sa,sb)*.5);
+    x.strokeStyle=fullNet?'rgba(220,170,90,.88)':'rgba(210,160,70,.85)';
+    x.lineWidth=fullNet?1.4:1.15+Math.max(sa,sb)*.9;
     x.beginPath();x.moveTo(A[0],A[1]);x.lineTo(B[0],B[1]);x.stroke();
   }
 
@@ -176,9 +176,9 @@ function draw(){
     const p=pulses[i];p.t+=.032;if(p.t>1){pulses.splice(i,1);continue}
     const a=p.from>=0?P[p.from]:[cx,cy],b=P[p.to];if(!a||!b)continue;
     const px=a[0]+(b[0]-a[0])*p.t,py=a[1]+(b[1]-a[1])*p.t;
-    x.strokeStyle='rgba(180,150,90,.35)';x.lineWidth=1;x.globalAlpha=.45*(1-p.t);
+    x.strokeStyle='rgba(210,165,90,.65)';x.lineWidth=1.6;x.globalAlpha=.6*(1-p.t);
     x.beginPath();x.moveTo(a[0]+(b[0]-a[0])*Math.max(0,p.t-.12),a[1]+(b[1]-a[1])*Math.max(0,p.t-.12));x.lineTo(px,py);x.stroke();
-    x.globalAlpha=.5;x.fillStyle='rgba(200,160,100,.7)';x.beginPath();x.arc(px,py,1.8,0,6.283);x.fill();
+    x.globalAlpha=.7;x.fillStyle='rgba(220,170,100,.85)';x.beginPath();x.arc(px,py,2.4,0,6.283);x.fill();
   }
   if(fullNet&&pulses.length<12){
     for(let k=0;k<2;k++){
