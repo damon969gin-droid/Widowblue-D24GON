@@ -132,8 +132,8 @@ function appendReply(body){
   };
   const shareBtn=document.createElement('button');
   shareBtn.type='button';
-  shareBtn.className='sec';
   shareBtn.dataset.label='Condividi';
+  shareBtn.className='sec';
   shareBtn.textContent='Condividi';
   shareBtn.onclick=()=>shareText('Widow Blue',plain||content.innerText||'',shareBtn);
   actions.appendChild(copyBtn);
@@ -191,6 +191,19 @@ const newChatBtn=document.getElementById('newChat');
 const shareThreadBtn=document.getElementById('shareThread');
 let allAgents=false;
 try{allAgents=localStorage.getItem('wb_all_agents')==='1'}catch(e){}
+
+function applyAllAgentsVisual(on){
+  window.allMode=!!on;
+  window.running=!!on;
+  if(window.WBNet&&typeof window.WBNet.setAllMode==='function'){
+    window.WBNet.setAllMode(!!on);
+  }else if(window.WBNet){
+    window.WBNet.allMode=!!on;
+    window.WBNet.running=!!on;
+    if(on&&window.WBNet.ignite)window.WBNet.ignite();
+    if(!on&&window.WBNet.dim)window.WBNet.dim();
+  }
+}
 if(allAgentsBtn){
   allAgentsBtn.textContent='Tutti gli agenti: '+(allAgents?'sì':'no');
   if(allAgents)allAgentsBtn.classList.add('on');
@@ -199,10 +212,11 @@ if(allAgentsBtn){
     allAgentsBtn.textContent='Tutti gli agenti: '+(allAgents?'sì':'no');
     allAgentsBtn.classList.toggle('on',allAgents);
     try{localStorage.setItem('wb_all_agents',allAgents?'1':'0')}catch(e){}
-    if(typeof window!=='undefined'){window.allMode=allAgents}
+    applyAllAgentsVisual(allAgents);
   };
 }
-if(typeof window!=='undefined')window.allMode=allAgents;
+setTimeout(()=>applyAllAgentsVisual(allAgents),0);
+applyAllAgentsVisual(allAgents);
 
 if(clipBtn&&fileInput){
   clipBtn.onclick=()=>fileInput.click();
@@ -307,6 +321,18 @@ async function sendQuery(){
   userDiv.textContent=text||'(allegati)';
   if(atts.length){const ad=document.createElement('div');ad.className='atts';ad.textContent=atts.map(a=>a.name).join(', ');userDiv.appendChild(ad)}
   if(logEl){logEl.appendChild(userDiv);updateLogTouchMode();scrollLog()}
+  if(allAgents)applyAllAgentsVisual(true);
+  else if(window.WBNet&&window.WBNet.ignite){
+    window.running=true;
+    if(window.WBNet.setRunning)window.WBNet.setRunning(true);
+    window.WBNet.ignite();
+    setTimeout(()=>{
+      if(!allAgents&&window.WBNet){
+        if(window.WBNet.setRunning)window.WBNet.setRunning(false);
+        window.running=false;
+      }
+    },4500);
+  }
   threadMessages.push({role:'user',text:text,at:Date.now()});
   pushMemory('user',text);
 
