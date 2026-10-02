@@ -46,7 +46,6 @@ async function shareText(title,text,btn){
   try{
     await navigator.clipboard.writeText(payload.text);
     if(btn){btn.textContent='Link copiato';setTimeout(()=>{btn.textContent=btn.dataset.label||'Condividi'},1800)}
-    else say('Condividi','testo copiato negli appunti');
   }catch(e2){
     if(btn)btn.textContent='Errore';
   }
@@ -125,7 +124,7 @@ function fire(i){if(i<0||i>=nodes.length)return;const n=nodes[i];n.act=1;pulses.
 function fireAll(){for(let i=0;i<nodes.length;i++)nodes[i].act=1;for(let i=0;i<12;i++)setTimeout(()=>fire(i),i*50);for(let e=0;e<Math.min(EDGE.length,200);e+=3){const[a,b]=EDGE[e];setTimeout(()=>pulses.push({from:a,to:b,t:0}),80+(e%40)*8)}}
 function renderChips(){const c=document.getElementById('chips');c.innerHTML='';files.forEach((f,i)=>{const s=document.createElement('span');s.className='chip';s.textContent=f.name+' \u00d7';s.onclick=()=>{files.splice(i,1);renderChips()};c.appendChild(s)})}
 document.getElementById('clip').onclick=()=>document.getElementById('file').click();
-document.getElementById('file').onchange=async e=>{for(const f of e.target.files){const item={name:f.name,type:f.type||'',size:f.size};if(f.type.startsWith('text/')||/\.(txt|md|json|csv|js|ts|tsx|jsx|py|html|css|yml|yaml|xml|svg)$/i.test(f.name)){try{item.text=(await f.text()).slice(0,80000)}catch(err){item.note='testo'}}else if(f.type.startsWith('image/'))item.note='immagine';else if(f.type.startsWith('video/'))item.note='video';else if(f.type.startsWith('audio/'))item.note='audio';else if(/\.(pdf|docx?|xlsx?|pptx?|zip|rar)$/i.test(f.name))item.note='documento';else item.note='allegato';files.push(item)}e.target.value='';renderChips();say('Media',files.length+' file in coda')};
+document.getElementById('file').onchange=async e=>{for(const f of e.target.files){const item={name:f.name,type:f.type||'',size:f.size};if(f.type.startsWith('text/')||/\.(txt|md|json|csv|js|ts|tsx|jsx|py|html|css|yml|yaml|xml|svg)$/i.test(f.name)){try{item.text=(await f.text()).slice(0,80000)}catch(err){item.note='testo'}}else if(f.type.startsWith('image/'))item.note='immagine';else if(f.type.startsWith('video/'))item.note='video';else if(f.type.startsWith('audio/'))item.note='audio';else if(/\.(pdf|docx?|xlsx?|pptx?|zip|rar)$/i.test(f.name))item.note='documento';else item.note='allegato';files.push(item)}e.target.value='';renderChips()};
 const LANGS=[['auto','Auto'],['it-IT','IT'],['en-US','EN'],['en-GB','EN-GB'],['es-ES','ES'],['fr-FR','FR'],['de-DE','DE'],['pt-BR','PT'],['zh-CN','ZH'],['ja-JP','JA'],['ko-KR','KO'],['ar-SA','AR'],['ru-RU','RU'],['hi-IN','HI'],['nl-NL','NL'],['pl-PL','PL'],['tr-TR','TR'],['uk-UA','UK']];
 const langSel=document.getElementById('lang');LANGS.forEach(([v,l])=>{const o=document.createElement('option');o.value=v;o.textContent=l;langSel.appendChild(o)});
 const bl=navigator.language||'it-IT';const m=LANGS.find(([v])=>v!=='auto'&&bl.toLowerCase().startsWith(v.slice(0,2).toLowerCase()));langSel.value=m?m[0]:'auto';
@@ -151,9 +150,9 @@ function labelsFor(lang){
   };
   return L[lang]||L.it;
 }
-if(SR){rec=new SR();rec.interimResults=true;rec.continuous=false;rec.onresult=e=>{let final='';for(let i=e.resultIndex;i<e.results.length;i++){const t=e.results[i][0].transcript;if(e.results[i].isFinal)final+=t;else document.getElementById('q').placeholder=t}if(final){const q=document.getElementById('q');q.value=(q.value+' '+final).trim();q.placeholder='Scrivi nella tua lingua...'}};rec.onend=()=>{listening=false;voiceBtn.classList.remove('rec');voiceBtn.textContent='Voce'};rec.onerror=()=>{listening=false;voiceBtn.classList.remove('rec');voiceBtn.textContent='Voce';say('Voce','microfono non disponibile')}}
-voiceBtn.onclick=()=>{if(!rec){say('Voce','Usa Chrome/Edge per la voce');return}if(listening){rec.stop();return}rec.lang=currentLang();listening=true;voiceBtn.classList.add('rec');voiceBtn.textContent='Ascolto\u2026';try{rec.start()}catch(e){listening=false;voiceBtn.classList.remove('rec');voiceBtn.textContent='Voce'}};
-document.getElementById('allAgents').onclick=function(){allMode=!allMode;this.textContent='Tutti gli agenti: '+(allMode?'s\u00ec':'no');this.classList.toggle('on',allMode);if(allMode){for(let i=0;i<nodes.length;i++)nodes[i].act=Math.max(nodes[i].act,.45);say('Rete','TUTTI GLI AGENTI ON')}else say('Rete','modalit\u00e0 standard')};
+if(SR){rec=new SR();rec.interimResults=true;rec.continuous=false;rec.onresult=e=>{let final='';for(let i=e.resultIndex;i<e.results.length;i++){const t=e.results[i][0].transcript;if(e.results[i].isFinal)final+=t;else document.getElementById('q').placeholder=t}if(final){const q=document.getElementById('q');q.value=(q.value+' '+final).trim();q.placeholder='Scrivi nella tua lingua...'}};rec.onend=()=>{listening=false;voiceBtn.classList.remove('rec');voiceBtn.textContent='Voce'};rec.onerror=()=>{listening=false;voiceBtn.classList.remove('rec');voiceBtn.textContent='Voce'}}
+voiceBtn.onclick=()=>{if(!rec)return;if(listening){rec.stop();return}rec.lang=currentLang();listening=true;voiceBtn.classList.add('rec');voiceBtn.textContent='Ascolto\u2026';try{rec.start()}catch(e){listening=false;voiceBtn.classList.remove('rec');voiceBtn.textContent='Voce'}};
+document.getElementById('allAgents').onclick=function(){allMode=!allMode;this.textContent='Tutti gli agenti: '+(allMode?'s\u00ec':'no');this.classList.toggle('on',allMode);if(allMode){for(let i=0;i<nodes.length;i++)nodes[i].act=Math.max(nodes[i].act,.45)}};
 
 (function ensureShareThreadBtn(){
   if(document.getElementById('shareThread'))return;
@@ -165,7 +164,7 @@ document.getElementById('allAgents').onclick=function(){allMode=!allMode;this.te
   btn.textContent='Condividi chat';
   btn.title='Condividi tutta la conversazione';
   btn.onclick=()=>{
-    if(!threadMessages.length){say('Condividi','nessun messaggio da condividere');return}
+    if(!threadMessages.length)return;
     shareText('Widow Blue · conversazione',formatThreadPlain(),btn);
   };
   const all=document.getElementById('allAgents');
@@ -230,8 +229,8 @@ function analyze(q){
   return{plain,html:'<p class="ans-text">'+esc(plain)+'</p>',entity:null};
 }
 
-const stepsStd=[[0,'…','Coordinatore'],[1,'…','Ricerca'],[0,'…','Coordinatore']];
-const stepsDeep=[[0,'…','Coordinatore'],[0,'…','Ricerca'],[0,'…','Coordinatore']];
+const stepsStd=[[0],[1],[0]];
+const stepsDeep=[[0],[0],[0]];
 
 function showPanel(title,body){
   appendReply(typeof body==='object'?body:{plain:String(body||''),html:null});
@@ -273,7 +272,6 @@ window.wbLoadConversation=function(it){
     }
   }
   logEl.scrollTop=1e9;
-  say('Cronologia','ok');
   document.getElementById('q').focus();
 };
 
@@ -289,7 +287,7 @@ if(pdl)pdl.onclick=()=>{};
 function run(){
   if(running)return;
   const q=document.getElementById('q').value.trim();
-  if(!q&&!files.length){say('Widow Blue','…');return}
+  if(!q&&!files.length)return;
   running=true;const go=document.getElementById('go');if(go)go.disabled=true;
   const prompt=q||'(…)';const atts=files.slice();
   pushMemory('user',prompt,null);
@@ -301,14 +299,12 @@ function run(){
 
   const hist=chatMemory.slice(-12).map(h=>({role:h.role,text:h.text,entity:h.entity}));
   const uiLang=resolveUiLang(prompt);
-  if(allMode){say('Coordinatore','…');fireAll()}
-  else{say('Coordinatore','…');fire(0)}
+  if(allMode)fireAll();else fire(0);
 
-  const steps=allMode?stepsDeep:stepsStd;const delay=allMode?300:420;let i=0;
+  const steps=allMode?stepsDeep:stepsStd;const delay=allMode?280:380;let i=0;
   const iv=setInterval(()=>{
     if(i<steps.length){
-      const[s,m,r]=steps[i++];fire(s);
-      say(r,m);
+      const[s]=steps[i++];fire(s);
     }else{
       clearInterval(iv);
       (async()=>{
@@ -316,7 +312,6 @@ function run(){
         let body=null;
         if(window.wbApi&&wbApi.orchestrate){
           try{
-            say('Ricerca','…');
             const r=await wbApi.orchestrate(prompt,{deep:allMode,search:true,attachments:atts.map(a=>a.name),history:hist,lang:uiLang});
             if(r.ok&&r.data){
               body=formatSearchAnswer(prompt,nodes.length,allMode,r.data.plan,r.data.search,r.data.conversation);
@@ -325,9 +320,11 @@ function run(){
               pushMemory('assistant',body.plain||'',ent);
               usedApi=true;
             }else if(r.data&&r.data.error){
-              say('Ricerca',String(r.data.message||r.data.error));
+              appendReply({plain:String(r.data.message||r.data.error),html:null});
             }
-          }catch(e){say('Ricerca',String(e.message||e));}
+          }catch(e){
+            appendReply({plain:String(e.message||e),html:null});
+          }
         }
         if(!usedApi&&window.wbApi&&wbApi.search){
           try{
