@@ -4,7 +4,7 @@ let lastResult='';
 const chatMemory=[];
 const MAX_MEMORY=24;
 let threadMessages=[];
-let appBusy=false; // non usare 'running' (già in wb-canvas.js)
+let appBusy=false;
 
 function pushMemory(role,text,entity){
   chatMemory.push({role,text:String(text||'').slice(0,800),entity:entity||null,at:Date.now()});
@@ -34,6 +34,17 @@ function esc(s){
 function linkHtml(url,label){
   if(!url||!/^https?:\/\//i.test(url)) return esc(label||url||'');
   return '<a href="'+esc(url)+'" target="_blank" rel="noopener noreferrer">'+esc(label||url)+'</a>';
+}
+
+/** Rimuove info di sistema / pipeline dalla risposta utente */
+function cleanUserAnswer(text){
+  let t=String(text||'');
+  t=t.replace(/\b(extractive[- ]?grounded|workers-ai-grounded|perplexity-grounded|deep-rag|grounded-empty)\b/gi,'');
+  t=t.replace(/\b(RAG|Grounded\s*·[^\n]*|Sintesi Tavily|Sintesi Serper)\b/gi,'');
+  t=t.replace(/\b(provider|generator|chunks?|contextChars|webLive|policy)\s*[:=][^\n]*/gi,'');
+  t=t.replace(/\[\d+\]\s*/g,'');
+  t=t.replace(/\s{2,}/g,' ').replace(/\n{3,}/g,'\n\n').trim();
+  return t;
 }
 
 async function shareText(title,text,btn){
@@ -203,11 +214,11 @@ function resolveUiLang(prompt){
 }
 function labelsFor(lang){
   const L={
-    it:{ans:'Risposta',src:'Fonti',plan:'Piano',img:'Immagine'},
-    en:{ans:'Answer',src:'Sources',plan:'Plan',img:'Image'},
-    es:{ans:'Respuesta',src:'Fuentes',plan:'Plan',img:'Imagen'},
-    fr:{ans:'Réponse',src:'Sources',plan:'Plan',img:'Image'},
-    de:{ans:'Antwort',src:'Quellen',plan:'Plan',img:'Bild'},
+    it:{ans:'Risposta',src:'Fonti',img:'Immagine'},
+    en:{ans:'Answer',src:'Sources',img:'Image'},
+    es:{ans:'Respuesta',src:'Fuentes',img:'Imagen'},
+    fr:{ans:'Réponse',src:'Sources',img:'Image'},
+    de:{ans:'Antwort',src:'Quellen',img:'Bild'},
   };
   return L[lang]||L.it;
 }
@@ -284,15 +295,10 @@ if(shareThreadBtn){
   };
 }
 
-function isSoftwareRequest(prompt){
-  const ql=(prompt||'').toLowerCase();
-  return /\b(sito|landing|backend|frontend|database|deploy|software|programma|codice|react|next\.js|flutter|dashboard|crea un sito|costruisci|sviluppa un|app mobile)\b/.test(ql);
-}
-
+/** Solo risposta utile + fonti. Nessuna info di sistema / piano / pipeline. */
 function formatSearchAnswer(prompt,nAgents,deep,plan,search,conversation,image){
   const results=(search&&search.results)||[];
   const answer=search&&search.answer;
-  const soft=isSoftwareRequest(prompt);
   const lang=resolveUiLang(prompt);
   const lb=labelsFor(lang);
   let plain='';
@@ -301,50 +307,59 @@ function formatSearchAnswer(prompt,nAgents,deep,plan,search,conversation,image){
 
   if(image&&image.imageUrl){
     imageUrl=image.imageUrl;
-    plain+=(image.message||lb.img)+'\n';
+    const msg=cleanUserAnswer(image.message||lb.img);
+    plain+=msg+'\n';
     html+='<div class="ans-h">'+esc(lb.img)+'</div>';
-    html+='<p class="ans-text">'+esc(image.message||lb.img)+'</p>';
+    html+='<p class="ans-text">'+esc(msg)+'</p>';
     return { plain, html, imageUrl, entity: null };
   }
 
-  plain+=lb.ans.toUpperCase()+'\n';
-  html+='<div class="ans-h">'+esc(lb.ans)+'</div>';
+  let answerText='';
   if(answer&&answer.text){
-    plain+=answer.text+'\n';
-    html+='<p class="ans-text">'+esc(answer.text)+'</p>';
+    answerText=cleanUserAnswer(answer.text);
   }else if(results.length){
     const best=results.find(r=>r.kind==='summary'&&r.snippet)||results[0];
-    const t=(best.snippet||'').slice(0,900);
-    plain+=t+'\n';
-    html+='<p class="ans-text">'+esc(t)+'</p>';
-  }else{
-    plain+='—\n';
-    html+='<p class="ans-text dim">—</p>';
+    answerText=cleanUserAnswer((best.snippet||'').slice(0,900));
   }
 
-  const sources=results.filter(r=>r.url).slice(0,5);
+  if(!answerText){
+    answerText=lang==='en'
+      ? 'I could not find a reliable answer from the available sources.'
+      : 'Non ho trovato una risposta affidabile dalle fonti disponibili.';
+  }
+
+  plain+=answerText+'\n';
+  html+='<p class="ans-text">'+esc(answerText)+'</p>';
+
+  // Fonti: solo titolo + link cliccabile (niente provider / sistema)
+  const sources=results.filter(r=>r.url&&r.title).slice(0,5);
   if(sources.length){
-    plain+='\n'+lb.src.toUpperCase()+'\n';
+    plain+='\n'+lb.src+'\n';
     html+='<div class="ans-h">'+esc(lb.src)+'</div><ol class="ans-src">';
     sources.forEach((r,i)=>{
-      const title=r.title||r.url;
+      let title=String(r.title||r.url)
+        .replace(/^Sintesi\s+\w+/i,'')
+        .replace(/\s*\((IT|EN|[A-Z]{2})\)\s*$/i,'')
+        .trim()||r.url;
       plain+=(i+1)+'. '+title+'\n   '+r.url+'\n';
-      html+='<li><span class="prov">['+esc(r.provider||'')+']</span> '+linkHtml(r.url,title)+'</li>';
+      html+='<li>'+linkHtml(r.url,title)+'</li>';
     });
     html+='</ol>';
   }
 
-  if(soft&&plan&&plan.stack&&plan.stack.length){
-    plain+='\n'+lb.plan.toUpperCase()+'\n'+plan.stack.join(' · ')+'\n';
-    html+='<div class="ans-h">'+esc(lb.plan)+'</div><p class="ans-text">'+esc(plan.stack.join(' · '))+'</p>';
-  }
-
   const entity=(conversation&&conversation.entity)||(answer&&answer.title)||null;
-  return { plain, html, imageUrl, entity: entity ? String(entity).replace(/\s*\([A-Z]{2}\)\s*$/i,'').trim() : null };
+  let cleanEntity=entity?String(entity).replace(/\s*\([A-Z]{2}\)\s*$/i,'').replace(/^Sintesi\s+\w+/i,'').trim():null;
+  if(cleanEntity&&/^(RAG|Grounded|Image)$/i.test(cleanEntity))cleanEntity=null;
+
+  return { plain, html, imageUrl, entity: cleanEntity };
 }
 
 function analyze(){
-  return{plain:'—',html:'<p class="ans-text dim">—</p>',entity:null};
+  return{
+    plain:'Non ho trovato una risposta affidabile dalle fonti disponibili.',
+    html:'<p class="ans-text">Non ho trovato una risposta affidabile dalle fonti disponibili.</p>',
+    entity:null
+  };
 }
 
 const stepsStd=[[0],[1],[0]];
@@ -413,7 +428,7 @@ function run(){
   const uiLang=resolveUiLang(prompt);
   if(isDeep())fireAll();else fire(0);
 
-  const steps=isDeep()?stepsDeep:stepsStd;const delay=300;let i=0;
+  const steps=isDeep()?stepsDeep:stepsStd;const delay=280;let i=0;
   const iv=setInterval(()=>{
     if(i<steps.length){
       const[s]=steps[i++];fire(s);
@@ -427,16 +442,16 @@ function run(){
             const r=await wbApi.orchestrate(prompt,{deep:isDeep(),search:true,attachments:atts.map(a=>a.name),history:hist,lang:uiLang});
             if(r.ok&&r.data){
               const img=r.data.image||(r.data.search&&r.data.search.image)||null;
-              body=formatSearchAnswer(prompt,(typeof nodes!=='undefined'?nodes.length:0),isDeep(),r.data.plan,r.data.search,r.data.conversation,img);
+              body=formatSearchAnswer(prompt,0,isDeep(),null,r.data.search,r.data.conversation,img);
               const ent=(r.data.conversation&&r.data.conversation.entity)||body.entity;
               appendReply(body);
               pushMemory('assistant',body.plain||'',ent);
               usedApi=true;
             }else if(r.data&&r.data.error){
-              appendReply({plain:String(r.data.message||r.data.error),html:null});
+              appendReply({plain:'Non è stato possibile completare la ricerca. Riprova.',html:null});
             }
           }catch(e){
-            appendReply({plain:String(e.message||e),html:null});
+            appendReply({plain:'Non è stato possibile completare la ricerca. Riprova.',html:null});
           }
         }
         if(!usedApi&&window.wbApi&&wbApi.search){
