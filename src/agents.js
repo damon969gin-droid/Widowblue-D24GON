@@ -2,7 +2,10 @@
  * WidowBlue – catalogo 453 agenti specializzati
  * Ogni agente ha ruolo + specialità + dominio di compito distinto:
  * ricerca, immagini, contenuti, programmazione, matematica, analisi, ML
+ * + mappa curriculum AI (7 parti) per routing intelligente
  */
+
+import { CURRICULUM_SPECS, matchCurriculum, curriculumDomains, curriculumSummary } from './curriculum.js';
 
 export const AGENT_ROLES = [
   'Coordinatore',
@@ -21,10 +24,9 @@ export const AGENT_ROLES = [
 
 export const TOTAL_AGENTS = 453;
 export const LEADER_COUNT = 12;
-export const WORKER_COUNT = TOTAL_AGENTS - LEADER_COUNT; // 441
+export const WORKER_COUNT = TOTAL_AGENTS - LEADER_COUNT;
 export const SHELL_SHARES = [0.25, 0.35, 0.4];
 
-/** Domini di lavoro */
 export const DOMAINS = {
   search: 'ricerca',
   image: 'immagini',
@@ -38,7 +40,6 @@ export const DOMAINS = {
   deploy: 'deploy',
 };
 
-/** Specialità estese per ruolo (ogni worker cicla su queste) */
 const SPECIALTIES = {
   Coordinatore: [
     { s: 'intent-routing', domain: 'search', task: 'Classifica intent e assegna agenti' },
@@ -124,7 +125,6 @@ const SPECIALTIES = {
   ],
 };
 
-/** Specialisti extra (worker cross-role) per math / ML / analysis */
 const EXTRA_SPECS = [
   { s: 'algebra', domain: 'math', task: 'Risolve equazioni e algebra' },
   { s: 'calculus', domain: 'math', task: 'Derivate, integrali, limiti' },
@@ -151,6 +151,7 @@ const EXTRA_SPECS = [
   { s: 'source-verify', domain: 'search', task: 'Verifica affidabilità fonti' },
   { s: 'img-prompt', domain: 'image', task: 'Prompt engineering immagini' },
   { s: 'style-transfer', domain: 'image', task: 'Stile e coerenza visuale' },
+  ...CURRICULUM_SPECS.map(({ s, domain, task }) => ({ s, domain, task })),
 ];
 
 function shellCounts(totalWorkers) {
@@ -167,16 +168,18 @@ function shellCounts(totalWorkers) {
 
 function pickSpec(role, k) {
   const list = SPECIALTIES[role] || [{ s: 'general', domain: 'analysis', task: 'Supporto generico' }];
-  // mescola extra specs su worker con indice alto → varietà math/ml/search
-  if (k % 5 === 4) {
+  if (k % 4 === 3) {
     return EXTRA_SPECS[k % EXTRA_SPECS.length];
+  }
+  if (k % 7 === 0 && CURRICULUM_SPECS.length) {
+    const c = CURRICULUM_SPECS[k % CURRICULUM_SPECS.length];
+    return { s: c.s, domain: c.domain, task: c.task };
   }
   return list[k % list.length];
 }
 
 export function buildAgentCatalog() {
   const agents = [];
-
   AGENT_ROLES.forEach((role, i) => {
     const spec = (SPECIALTIES[role] || [{ s: 'lead', domain: 'analysis', task: 'Leadership ' + role }])[0];
     agents.push({
@@ -198,7 +201,6 @@ export function buildAgentCatalog() {
   const counts = shellCounts(WORKER_COUNT);
   let id = LEADER_COUNT + 1;
   let workerIdx = 0;
-
   counts.forEach((count, shellIdx) => {
     for (let k = 0; k < count; k++) {
       const role = AGENT_ROLES[workerIdx % AGENT_ROLES.length];
@@ -222,7 +224,6 @@ export function buildAgentCatalog() {
       workerIdx++;
     }
   });
-
   return agents;
 }
 
@@ -249,10 +250,11 @@ export function agentStats() {
     byRole,
     byShell,
     byDomain,
+    curriculumParts: 7,
+    curriculum: curriculumSummary(),
   };
 }
 
-/** Rileva intent della richiesta utente */
 export function detectIntent(query) {
   const q = String(query || '').toLowerCase();
   if (/genera\s+(un['\u2019]?\s*)?(immagine|img|foto|disegno)|create\s+(an?\s+)?image|draw\s+/i.test(q))
@@ -262,7 +264,7 @@ export function detectIntent(query) {
   if (/\b(equazion|integral|derivat|calcol[oa]|matematic|algebra|geometr|probabilit|statist)\b/i.test(q) ||
       /[∫∑√π]|\d+\s*[\+\-\*\/\^]\s*\d+/.test(q))
     return 'math';
-  if (/\b(machine learning|modello|neural|classific|embedding|train|dataset|ml\b)\b/i.test(q))
+  if (/\b(machine learning|modello|neural|classific|embedding|train|dataset|ml\b|transformer|llm|rag\b|backprop|overfitting|cnn|ocr|ner\b|fine-?tuning|iperparametr|allucinazion|agentic|orchestrazion)\b/i.test(q))
     return 'ml';
   if (/\b(analizza|confronta|perché|perche|valuta|critica|trade-?off|pro\s*e\s*contro)\b/i.test(q))
     return 'analysis';
@@ -273,7 +275,6 @@ export function detectIntent(query) {
   return 'search';
 }
 
-/** Mappa intent → domini prioritari */
 const INTENT_DOMAINS = {
   search: ['search', 'analysis', 'ml'],
   image: ['image', 'content', 'ml'],
@@ -285,16 +286,17 @@ const INTENT_DOMAINS = {
   security: ['security', 'code', 'analysis'],
 };
 
-/**
- * Seleziona squadra di agenti con compiti diversi per la richiesta.
- * allMode: leader + più worker per dominio
- */
 export function selectAgentsForTask(opts = {}) {
   const all = getAgentCatalog();
   const q = String(opts.query || '');
   const intent = opts.intent || detectIntent(q);
   const allMode = !!opts.allMode;
-  const domains = INTENT_DOMAINS[intent] || INTENT_DOMAINS.search;
+  let domains = (INTENT_DOMAINS[intent] || INTENT_DOMAINS.search).slice();
+  const curHits = matchCurriculum(q);
+  const curDom = curriculumDomains(q);
+  for (const d of curDom) {
+    if (!domains.includes(d)) domains.push(d);
+  }
 
   const leaders = all.filter((a) => a.shell === 0);
   const coordinator = leaders.find((a) => a.role === 'Coordinatore');
@@ -320,13 +322,13 @@ export function selectAgentsForTask(opts = {}) {
   add(coordinator);
   add(memoria);
 
-  // un leader per dominio rilevante
   for (const d of domains) {
-    const lead = leaders.find((a) => a.domain === d) || leaders.find((a) => (SPECIALTIES[a.role] || []).some((x) => x.domain === d));
+    const lead =
+      leaders.find((a) => a.domain === d) ||
+      leaders.find((a) => (SPECIALTIES[a.role] || []).some((x) => x.domain === d));
     if (lead) add(lead);
   }
 
-  // worker specializzati per dominio (compiti diversi)
   const maxWorkers = allMode ? 36 : intent === 'search' ? 8 : 12;
   for (const d of domains) {
     const pool = all.filter((a) => a.shell > 0 && a.domain === d);
@@ -334,7 +336,6 @@ export function selectAgentsForTask(opts = {}) {
     for (const a of pool.slice(0, take)) add(a);
   }
 
-  // arricchimenti per intent specifici
   if (intent === 'code') {
     leaders.filter((a) => ['Frontend', 'Backend', 'Test', 'Database'].includes(a.role)).forEach(add);
   }
@@ -342,7 +343,10 @@ export function selectAgentsForTask(opts = {}) {
     leaders.filter((a) => ['Media', 'Design'].includes(a.role)).forEach(add);
   }
   if (intent === 'math' || intent === 'ml') {
-    all.filter((a) => a.shell > 0 && (a.domain === 'math' || a.domain === 'ml')).slice(0, allMode ? 20 : 6).forEach(add);
+    all
+      .filter((a) => a.shell > 0 && (a.domain === 'math' || a.domain === 'ml'))
+      .slice(0, allMode ? 20 : 6)
+      .forEach(add);
   }
   if (intent === 'security') {
     leaders.filter((a) => a.role === 'Sicurezza').forEach(add);
@@ -353,20 +357,21 @@ export function selectAgentsForTask(opts = {}) {
     all.filter((a) => a.shell > 0).slice(0, 48).forEach(add);
   }
 
-  return { intent, domains, agents: team, count: team.length };
+  return {
+    intent,
+    domains,
+    agents: team,
+    count: team.length,
+    curriculum: curHits && curHits.length ? curHits : undefined,
+  };
 }
 
-/**
- * Simula contributi per-agente (pipeline leggera edge).
- * Ogni agente restituisce un contribution con task distinto.
- */
 export function runAgentContributions(query, selection, extras = {}) {
   const q = String(query || '').trim();
   const agents = (selection && selection.agents) || [];
   const intent = (selection && selection.intent) || detectIntent(q);
   const contributions = agents.map((a) => {
     let note = a.task || a.specialty;
-    // personalizza note in base a intent + specialty
     if (a.domain === 'search') note = `Ricerca: ${a.task} su «${q.slice(0, 80)}»`;
     if (a.domain === 'image') note = `Immagini: ${a.task}`;
     if (a.domain === 'code') note = `Codice: ${a.task}`;
@@ -392,10 +397,10 @@ export function runAgentContributions(query, selection, extras = {}) {
     query: q,
     agentCount: contributions.length,
     domains: selection.domains || [],
+    curriculum: selection.curriculum,
     contributions,
-    // hints per downstream RAG / answer
     boosts: {
-      preferDeep: intent === 'search' || intent === 'analysis',
+      preferDeep: intent === 'search' || intent === 'analysis' || intent === 'ml',
       preferImage: intent === 'image',
       preferCodeStructure: intent === 'code',
       preferMathSteps: intent === 'math',
@@ -417,3 +422,5 @@ export function agentsSeedSQL() {
     })
     .join('\n');
 }
+
+export { matchCurriculum, curriculumDomains, curriculumSummary, CURRICULUM_SPECS };
