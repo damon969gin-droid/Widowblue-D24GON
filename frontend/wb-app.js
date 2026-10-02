@@ -8,6 +8,12 @@ function scrollLog(){
     if(last&&last.scrollIntoView)try{last.scrollIntoView({block:'end',behavior:'smooth'})}catch(e){}
   });
 }
+function updateLogTouchMode(){
+  if(!logEl)return;
+  const has=logEl.children.length>0;
+  logEl.classList.toggle('has-msgs',has);
+  logEl.classList.toggle('empty',!has);
+}
 let lastResult='';
 const chatMemory=[];
 const MAX_MEMORY=24;
@@ -31,6 +37,7 @@ function say(role,txt,cls){
   if(cls==='user')d.textContent=txt;
   else d.innerHTML='<i>'+role+'</i> '+String(txt||'');
   logEl.appendChild(d);
+  updateLogTouchMode();
   scrollLog();
   while(logEl.children.length>80)logEl.removeChild(logEl.firstChild);
 }
@@ -133,6 +140,7 @@ function appendReply(body){
   actions.appendChild(shareBtn);
   d.appendChild(actions);
   logEl.appendChild(d);
+  updateLogTouchMode();
   scrollLog();
   threadMessages.push({role:'assistant',plain:plain,html:html,imageUrl:imageUrl,at:Date.now()});
   try{localStorage.setItem('wb_thread',JSON.stringify(threadMessages.slice(-40)))}catch(e){}
@@ -252,7 +260,7 @@ if(newChatBtn){
       localStorage.removeItem('wb_thread');
       localStorage.removeItem('wb_chat_memory');
     }catch(e){}
-    if(logEl)logEl.innerHTML='';
+    if(logEl){logEl.innerHTML='';updateLogTouchMode()}
     files.length=0;
     const chips=document.getElementById('chips');
     if(chips)chips.innerHTML='';
@@ -277,6 +285,7 @@ try{
         appendReply({plain:m.plain||m.text||'',html:m.html||null,imageUrl:m.imageUrl||null});
       }
     });
+    updateLogTouchMode();
     scrollLog();
   }
 }catch(e){}
@@ -297,7 +306,7 @@ async function sendQuery(){
   userDiv.className='msg user';
   userDiv.textContent=text||'(allegati)';
   if(atts.length){const ad=document.createElement('div');ad.className='atts';ad.textContent=atts.map(a=>a.name).join(', ');userDiv.appendChild(ad)}
-  if(logEl){logEl.appendChild(userDiv);scrollLog()}
+  if(logEl){logEl.appendChild(userDiv);updateLogTouchMode();scrollLog()}
   threadMessages.push({role:'user',text:text,at:Date.now()});
   pushMemory('user',text);
 
@@ -350,3 +359,4 @@ async function sendQuery(){
 
 if(goBtn)goBtn.onclick=sendQuery;
 if(qEl)qEl.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendQuery()}});
+updateLogTouchMode();
