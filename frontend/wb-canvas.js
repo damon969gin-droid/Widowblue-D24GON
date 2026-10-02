@@ -13,7 +13,29 @@ let _wleft=TARGET_WORKERS;
 shells.forEach(([share,rad],k)=>{const c=k===shells.length-1?_wleft:Math.round(TARGET_WORKERS*share);_wleft-=c;for(let i=0;i<c;i++){const j=1+rad*.05*(Math.random()-.5),p=fib(i,c,rad*j);let best=0,bd=-9;nodes.slice(0,12).forEach((m,mi)=>{const d=m.p[0]*p[0]+m.p[1]*p[1]+m.p[2]*p[2];if(d>bd){bd=d;best=mi}});nodes.push({p,k:k+1,s:1.4+Math.random()*.9,act:0,par:best});nodes[best].kids.push(nodes.length-1)}});
 const EDGE=[];
 for(let i=12;i<nodes.length;i++){if(nodes[i].par!=null)EDGE.push([nodes[i].par,i])}
-for(let i=0;i<12;i++){EDGE.push([i,(i+1)%12]);EDGE.push([i,(i+3)%12])}
+for(let i=0;i<12;i++){
+  EDGE.push([i,(i+1)%12]);
+  EDGE.push([i,(i+2)%12]);
+  EDGE.push([i,(i+3)%12]);
+  EDGE.push([i,(i+5)%12]);
+}
+const byPar={};
+for(let i=12;i<nodes.length;i++){
+  const p=nodes[i].par; if(p==null) continue;
+  if(!byPar[p]) byPar[p]=[];
+  byPar[p].push(i);
+}
+Object.keys(byPar).forEach(p=>{
+  const arr=byPar[p];
+  for(let k=0;k<arr.length;k++){
+    const a=arr[k], b=arr[(k+1)%arr.length];
+    if(a!==b) EDGE.push([a,b]);
+    if(k%3===0 && arr.length>3){
+      const c=arr[(k+Math.floor(arr.length/3))%arr.length];
+      if(c!==a) EDGE.push([a,c]);
+    }
+  }
+});
 document.getElementById('t').textContent=nodes.length;
 function resize(){W=cv.width=innerWidth;H=cv.height=innerHeight;cx=W/2;cy=H*.42;R=Math.min(W,H)*.36}resize();addEventListener('resize',resize);
 
@@ -74,19 +96,25 @@ function syncFlags(){
 
 function igniteNetwork(){
   nodes.forEach((n)=>{
-    if(n.k===0) n.act=0.8;
-    else n.act=0.4+Math.random()*0.3;
+    if(n.k===0) n.act=0.95;
+    else if(n.k===1) n.act=0.75+Math.random()*0.15;
+    else if(n.k===2) n.act=0.6+Math.random()*0.2;
+    else n.act=0.5+Math.random()*0.25;
   });
+  pulses.length=0;
   for(let i=0;i<12;i++){
     const kids=nodes[i].kids||[];
-    for(let k=0;k<Math.min(kids.length,4);k++){
-      pulses.push({from:i,to:kids[k],t:Math.random()*0.2});
+    for(let k=0;k<kids.length;k++){
+      pulses.push({from:i,to:kids[k],t:-(k%10)*0.035-Math.random()*0.04});
     }
-    pulses.push({from:i,to:(i+1)%12,t:Math.random()*0.15});
+    pulses.push({from:i,to:(i+1)%12,t:-Math.random()*0.08});
+    pulses.push({from:i,to:(i+3)%12,t:-0.04-Math.random()*0.08});
   }
-  for(let p=0;p<18;p++){
-    const e=EDGE[(Math.random()*Math.min(EDGE.length,2000))|0];
-    if(e) pulses.push({from:e[0],to:e[1],t:Math.random()*0.3});
+  for(let p=0;p<Math.min(EDGE.length,1200);p++){
+    const e=EDGE[p];
+    if(!e) continue;
+    if(e[0]<12 && e[1]>=12) continue;
+    pulses.push({from:e[0],to:e[1],t:-0.12-Math.random()*0.4});
   }
 }
 
@@ -103,7 +131,12 @@ window.WBNet={
     allMode=!!v;
     window.allMode=!!v;
     if(v){
-      nodes.forEach((n)=>{ if(n.k===0) n.act=0.75; else n.act=0.4+Math.random()*0.25; });
+      nodes.forEach((n)=>{
+        if(n.k===0) n.act=0.9;
+        else n.act=0.55+Math.random()*0.3;
+      });
+      igniteNetwork();
+      if(!running) pulses.length=0;
     } else {
       this.running=false; running=false; window.running=false;
       dimNetwork();
@@ -135,48 +168,53 @@ function draw(){
   x.globalAlpha=.28;x.strokeStyle='rgba(90,160,180,.55)';x.lineWidth=1.2;
   for(let i=0;i<12;i++){x.beginPath();x.moveTo(cx,cy);x.lineTo(P[i][0],P[i][1]);x.stroke()}
 
-  const fullNet=allMode&&(running||nodes.some(n=>n.act>.08));
-  const edgeLimit=fullNet?EDGE.length:Math.min(EDGE.length,2800);
+  const fullNet=!!allMode;
+  const edgeLimit=fullNet?EDGE.length:Math.min(EDGE.length,2200);
+  x.lineCap='round';
   for(let e=0;e<edgeLimit;e++){
     const [a,b]=EDGE[e];const na=nodes[a],nb=nodes[b];if(!na||!nb)continue;
-    const strength=Math.max(na.act,nb.act);
-    if(!(fullNet||strength>.04))continue;
+    const strength=Math.max(na.act||0,nb.act||0);
+    if(!(fullNet||strength>.05))continue;
     const A=P[a],B=P[b];if(!A||!B)continue;
     if(fullNet){
-      x.globalAlpha=.18+strength*.22;
-      x.strokeStyle=strength>.4?'rgba(150,145,120,.65)':'rgba(85,125,145,.5)';
-      x.lineWidth=1.05+strength*.65;
+      const lead=a<12&&b<12;
+      x.globalAlpha=lead?0.58+strength*0.22:0.38+strength*0.32;
+      x.strokeStyle=lead
+        ?('rgba(110,170,190,'+(0.8+strength*0.15)+')')
+        :(strength>.55?'rgba(175,160,115,0.82)':'rgba(90,140,160,0.7)');
+      x.lineWidth=lead?1.7:1.25+strength*0.5;
     }else{
-      x.globalAlpha=.18+strength*.28;
-      x.strokeStyle='rgba(140,135,110,.6)';
-      x.lineWidth=.85+strength*.65;
+      x.globalAlpha=.22+strength*.35;
+      x.strokeStyle='rgba(140,135,110,.7)';
+      x.lineWidth=.9+strength*.7;
     }
-    x.beginPath();x.moveTo(A[0],A[1]);x.lineTo(B[0],B[1]);x.stroke();
-  }
-  for(let i=0;i<12;i++)for(let j=i+1;j<12;j++){
-    const sa=nodes[i].act,sb=nodes[j].act;
-    if(sa<.12&&sb<.12&&!fullNet)continue;
-    if(!fullNet&&(sa<.12||sb<.12))continue;
-    const A=P[i],B=P[j];
-    x.globalAlpha=fullNet?.2:Math.min(.65,.2+Math.max(sa,sb)*.35);
-    x.strokeStyle=fullNet?'rgba(145,140,115,.6)':'rgba(150,140,110,.65)';
-    x.lineWidth=fullNet?1.1:.95+Math.max(sa,sb)*.65;
     x.beginPath();x.moveTo(A[0],A[1]);x.lineTo(B[0],B[1]);x.stroke();
   }
 
   for(let i=pulses.length-1;i>=0;i--){
-    const p=pulses[i];p.t+=.02;if(p.t>1){pulses.splice(i,1);continue}
-    if(!running&&p.t<.05){pulses.splice(i,1);continue}
+    const p=pulses[i];
+    p.t+=.026;
+    if(p.t>1){pulses.splice(i,1);continue}
+    if(p.t<0) continue;
+    if(!running){ if(p.t>0.01){pulses.splice(i,1);} continue; }
     const a=p.from>=0?P[p.from]:[cx,cy],b=P[p.to];if(!a||!b)continue;
     const px=a[0]+(b[0]-a[0])*p.t,py=a[1]+(b[1]-a[1])*p.t;
-    x.strokeStyle='rgba(160,155,130,.5)';x.lineWidth=1.3;x.globalAlpha=.45*(1-p.t);
-    x.beginPath();x.moveTo(a[0]+(b[0]-a[0])*Math.max(0,p.t-.14),a[1]+(b[1]-a[1])*Math.max(0,p.t-.14));x.lineTo(px,py);x.stroke();
-    x.globalAlpha=.5;x.fillStyle='rgba(170,165,140,.75)';x.beginPath();x.arc(px,py,1.9,0,6.283);x.fill();
+    const trail=Math.max(0,p.t-.16);
+    x.strokeStyle='rgba(195,180,125,0.75)';
+    x.lineWidth=1.65;
+    x.globalAlpha=.62*(1-p.t);
+    x.beginPath();
+    x.moveTo(a[0]+(b[0]-a[0])*trail,a[1]+(b[1]-a[1])*trail);
+    x.lineTo(px,py);
+    x.stroke();
+    x.globalAlpha=.8*(1-p.t*0.4);
+    x.fillStyle='rgba(215,195,135,0.95)';
+    x.beginPath();x.arc(px,py,2.35,0,6.283);x.fill();
   }
-  if(running&&pulses.length<24){
-    for(let k=0;k<2;k++){
-      const e=EDGE[(Math.random()*Math.min(EDGE.length,2000))|0];
-      if(e) pulses.push({from:e[0],to:e[1],t:0});
+  if(running&&pulses.length<140){
+    for(let k=0;k<12;k++){
+      const e=EDGE[(Math.random()*EDGE.length)|0];
+      if(e) pulses.push({from:e[0],to:e[1],t:-Math.random()*0.25});
     }
   }
 
@@ -197,10 +235,10 @@ function draw(){
   ord.forEach(i=>{
     const n=nodes[i],q=P[i];
     if(allMode&&running){
-      n.act=Math.min(0.85,Math.max(n.act,0.35)*0.998+0.005);
-      if(n.act<.35)n.act=Math.min(0.8,n.act+.018);
+      n.act=Math.min(0.98,Math.max(n.act,0.5)*0.999+0.008);
+      if(n.act<.5)n.act=Math.min(0.9,n.act+.03);
     }else if(allMode&&!running){
-      n.act=Math.max(0.28,n.act*0.995);
+      n.act=Math.max(0.5,n.act*0.998+0.002);
     }else{
       n.act*=.986;
     }
