@@ -1,15 +1,6 @@
 /**
  * WidowBlue – RAG: Deep Search + Grounded Generation
- *
- * DEEP SEARCH
- *  - Query expansion (varianti della domanda)
- *  - Più provider / più risultati (via modularSearch deep)
- *  - Secondo passaggio su termini chiave se pochi hit
- *
- * GROUNDED GENERATION
- *  - Risposta solo da chunk recuperati
- *  - Citazioni [n] collegate a url
- *  - Nessuna invenzione: se non c’è nel contesto, lo dice
+ * Answers are user-facing: analyze sources, reason, reply. No system meta.
  */
 
 import { modularSearch } from './search.js';
@@ -28,23 +19,17 @@ export async function runRAG(query, opts = {}) {
   const env = opts.env || {};
   const history = Array.isArray(opts.history) ? opts.history : [];
 
-  // ── 1) DEEP / STANDARD RETRIEVE ──
   const retrieval = await deepRetrieve(q, { deep, env, lang });
   const docs = retrieval.docs;
   const searchPrimary = retrieval.primary;
 
-  // ── 2) CHUNK ──
   const chunks = chunkDocuments(docs);
-
-  // ── 3) RANK ──
   const maxChunks = deep ? MAX_CHUNKS_DEEP : MAX_CHUNKS_STD;
   const ranked = rankChunks(q, chunks).slice(0, maxChunks);
 
-  // ── 4) AUGMENT ──
   const maxCtx = deep ? MAX_CONTEXT_DEEP : MAX_CONTEXT_STD;
   const { pack: contextPack, cited } = buildContextPack(ranked, maxCtx);
 
-  // ── 5) GROUNDED GENERATE ──
   const generation = await groundedGenerate(q, contextPack, cited, {
     lang,
     env,
@@ -69,6 +54,9 @@ export async function runRAG(query, opts = {}) {
     }, [])
     .slice(0, deep ? 10 : 6);
 
+  // Prefer clean answer text; attach results for UI sources
+  const cleanText = sanitizeUserText(generation.text);
+
   return {
     ok: true,
     mode: deep ? 'deep-rag' : 'rag',
@@ -76,8 +64,8 @@ export async function runRAG(query, opts = {}) {
     lang,
     deep,
     answer: {
-      text: generation.text,
-      title: generation.title || (deep ? 'Deep RAG' : 'RAG'),
+      text: cleanText,
+      title: '',
       provider: generation.provider,
       grounded: true,
       citations: generation.citations || [],
@@ -97,20 +85,20 @@ export async function runRAG(query, opts = {}) {
     webLive: !!searchPrimary.webLive,
     providers: searchPrimary.providers,
     results: searchPrimary.results,
-    policy: {
-      respectful: true,
-      grounded: true,
-      notes: [
-        deep ? 'Deep search: multi-query + più fonti' : 'Ricerca standard',
-        'Grounded: risposta solo da fonti recuperate',
-        'Citazioni [n] → url tracciabili',
-      ],
-    },
+    policy: { respectful: true, grounded: true },
     fetchedAt: Date.now(),
   };
 }
 
-/** Deep: primary + expanded queries, merge docs */
+function sanitizeUserText(text) {
+  let t = String(text || '').trim();
+  t = t.replace(/\b(extractive[- ]?grounded|workers-ai-grounded|perplexity-grounded|deep-rag|grounded-empty)\b/gi, '');
+  t = t.replace(/\b(RAG|Grounded\s*·[^\n]*|pipeline|provider|generator)\b/gi, '');
+  t = t.replace(/\[\d+\]/g, '');
+  t = t.replace(/\s{2,}/g, ' ').trim();
+  return t.slice(0, 1400);
+}
+
 async function deepRetrieve(q, { deep, env, lang }) {
   const queries = [q];
   if (deep) {
@@ -119,13 +107,11 @@ async function deepRetrieve(q, { deep, env, lang }) {
     }
   }
 
-  // Primary always full deep flag for providers
   const primary = await modularSearch(q, { deep, env, lang });
   const docs = [...(primary.results || [])];
   const seen = new Set(docs.map((d) => (d.url || d.title || '').toLowerCase()).filter(Boolean));
 
   if (deep && queries.length > 1) {
-    // Extra queries in parallel (max 2 extra to stay within Worker time)
     const extras = queries.slice(1, 3);
     const more = await Promise.all(
       extras.map((qq) => modularSearch(qq, { deep: true, env, lang }).catch(() => null))
@@ -141,7 +127,6 @@ async function deepRetrieve(q, { deep, env, lang }) {
     }
   }
 
-  // Second hop: if few docs, search key entities from top titles
   if (deep && docs.length < 4) {
     const hop = extractHopTerms(q, docs);
     if (hop) {
@@ -209,23 +194,11 @@ function chunkDocuments(docs) {
     if (!text && !title) continue;
     const parts = splitPassages(text, 360);
     if (!parts.length && title) {
-      out.push({
-        text: title,
-        title,
-        url: d.url || '',
-        provider: d.provider || 'unknown',
-        kind: d.kind || 'doc',
-      });
+      out.push({ text: title, title, url: d.url || '', provider: d.provider || 'unknown', kind: d.kind || 'doc' });
       continue;
     }
     for (const p of parts) {
-      out.push({
-        text: p,
-        title,
-        url: d.url || '',
-        provider: d.provider || 'unknown',
-        kind: d.kind || 'doc',
-      });
+      out.push({ text: p, title, url: d.url || '', provider: d.provider || 'unknown', kind: d.kind || 'doc' });
     }
   }
   return out;
@@ -301,15 +274,7 @@ function buildContextPack(ranked, maxChars) {
   for (const c of ranked) {
     i++;
     const block =
-      '[' +
-      i +
-      '] (' +
-      (c.provider || '?') +
-      ') ' +
-      (c.title || '') +
-      '\n' +
-      c.text +
-      (c.url ? '\nURL: ' + c.url : '');
+      '[' + i + '] (' + (c.provider || '?') + ') ' + (c.title || '') + '\n' + c.text + (c.url ? '\nURL: ' + c.url : '');
     if (used + block.length > maxChars) break;
     lines.push(block);
     used += block.length;
@@ -318,81 +283,67 @@ function buildContextPack(ranked, maxChars) {
   return { pack: lines.join('\n\n'), cited };
 }
 
-/**
- * Grounded generation: never invent beyond context.
- */
 async function groundedGenerate(query, context, cited, opts) {
   const lang = opts.lang || 'it';
   const env = opts.env || {};
   const langName =
-    { it: 'italiano', en: 'English', es: 'español', fr: 'français', de: 'Deutsch', pt: 'português' }[
-      lang
-    ] || 'italiano';
+    { it: 'italiano', en: 'English', es: 'español', fr: 'français', de: 'Deutsch', pt: 'português' }[lang] ||
+    'italiano';
 
   const system =
-    'Sei WidowBlue. Rispondi SOLO in ' +
+    'Sei WidowBlue, assistente di ricerca. Rispondi SOLO in ' +
     langName +
     '. ' +
-    'REGOLE GROUNDED (obbligatorie): ' +
-    '1) Usa SOLO fatti presenti nel contesto fornito. ' +
-    '2) Non inventare date, nomi, numeri. ' +
-    '3) Se il contesto non basta, dillo chiaramente. ' +
-    '4) Cita le fonti con [1], [2] dove usi un fatto. ' +
-    '5) Max ' +
+    'Analizza il contesto, ragiona e dai la risposta più chiara e utile alla domanda. ' +
+    'Usa SOLO fatti presenti nel contesto. Non inventare. ' +
+    'Non menzionare sistemi, pipeline, RAG, provider, API o dettagli tecnici. ' +
+    'Scrivi in prosa naturale, max ' +
     (opts.deep ? '8' : '5') +
-    ' frasi, precise e dirette.';
+    ' frasi. Se il contesto non basta, dillo in modo semplice.';
 
-  // A) Workers AI grounded
   if (env.AI && context.length > 40) {
     try {
       const text = await generateWithWorkersAI(env.AI, query, context, system);
       if (text) {
         return {
-          text: ensureGroundingNote(text, cited, lang),
+          text: sanitizeUserText(text),
           provider: 'workers-ai-grounded',
-          title: 'Grounded · Workers AI',
+          title: '',
           citations: cited.map((c) => c.id),
         };
       }
-    } catch (e) {
-      /* fallback */
-    }
+    } catch (e) {}
   }
 
-  // B) Perplexity with forced context
   if (env.PERPLEXITY_API_KEY && context.length > 40) {
     try {
       const text = await generateWithPerplexity(env.PERPLEXITY_API_KEY, query, context, system);
       if (text) {
         return {
-          text: ensureGroundingNote(text, cited, lang),
+          text: sanitizeUserText(text),
           provider: 'perplexity-grounded',
-          title: 'Grounded · Perplexity',
+          title: '',
           citations: cited.map((c) => c.id),
         };
       }
-    } catch (e) {
-      /* fallback */
-    }
+    } catch (e) {}
   }
 
-  // C) Extractive grounded (sempre, senza LLM)
   const extractive = extractiveGrounded(query, cited, lang);
   if (extractive.text) {
     return {
-      text: extractive.text,
+      text: sanitizeUserText(extractive.text),
       provider: 'extractive-grounded',
-      title: 'Grounded',
+      title: '',
       citations: extractive.citations,
     };
   }
 
-  // D) prior answer only if present in context-ish
   if (opts.priorAnswer && opts.priorAnswer.text && opts.priorAnswer.text.length > 40) {
     return {
-      text: opts.priorAnswer.text,
+      text: sanitizeUserText(opts.priorAnswer.text),
       provider: (opts.priorAnswer.provider || 'retrieve') + '-grounded',
-      title: opts.priorAnswer.title || 'Grounded',
+      title: '',
       citations: cited.slice(0, 3).map((c) => c.id),
     };
   }
@@ -400,34 +351,24 @@ async function groundedGenerate(query, context, cited, opts) {
   return {
     text:
       lang === 'en'
-        ? 'I could not find enough grounded sources to answer this question.'
-        : 'Non ho trovato fonti sufficienti per una risposta verificata.',
+        ? 'I could not find a reliable answer from the available sources.'
+        : 'Non ho trovato una risposta affidabile dalle fonti disponibili.',
     provider: 'grounded-empty',
-    title: 'Grounded',
+    title: '',
     citations: [],
   };
 }
 
-function ensureGroundingNote(text, cited, lang) {
-  let t = String(text || '').trim();
-  if (!t) return t;
-  // If model forgot citations but we have sources, append none — extractive already cites
-  if (!/\[\d+\]/.test(t) && cited.length) {
-    const ids = cited.slice(0, 3).map((c) => '[' + c.id + ']').join('');
-    t = t + ' ' + ids;
-  }
-  return t.slice(0, 1400);
-}
-
 async function generateWithWorkersAI(AI, query, context, system) {
-  const user = 'Domanda: ' + query + '\n\nContesto (fonti numerate):\n' + context + '\n\nRisposta grounded:';
+  const user =
+    'Domanda: ' + query + '\n\nContesto dalle fonti:\n' + context + '\n\nRisposta chiara e utile:';
   const res = await AI.run('@cf/meta/llama-3.1-8b-instruct', {
     messages: [
       { role: 'system', content: system },
       { role: 'user', content: user },
     ],
     max_tokens: 600,
-    temperature: 0.1,
+    temperature: 0.15,
   });
   const text =
     (res && (res.response || res.result || res.text)) || (typeof res === 'string' ? res : '');
@@ -447,10 +388,10 @@ async function generateWithPerplexity(apiKey, query, context, system) {
         { role: 'system', content: system },
         {
           role: 'user',
-          content: 'Question: ' + query + '\n\nNumbered sources:\n' + context + '\n\nGrounded answer:',
+          content: 'Question: ' + query + '\n\nSources:\n' + context + '\n\nClear useful answer:',
         },
       ],
-      temperature: 0.1,
+      temperature: 0.15,
       max_tokens: 600,
     }),
   });
@@ -464,7 +405,6 @@ async function generateWithPerplexity(apiKey, query, context, system) {
     .slice(0, 1400);
 }
 
-/** Pure extractive grounded answer with [n] citations */
 function extractiveGrounded(query, cited, lang) {
   if (!cited.length) return { text: '', citations: [] };
 
@@ -479,7 +419,6 @@ function extractiveGrounded(query, cited, lang) {
       const toks = tokenize(s);
       let hit = 0;
       for (const t of toks) if (qTokens.has(t)) hit++;
-      // require some overlap for grounding
       if (hit === 0 && qTokens.size > 0) continue;
       scored.push({ s: s.trim(), hit, id: c.id, len: s.length });
     }
@@ -500,24 +439,16 @@ function extractiveGrounded(query, cited, lang) {
   }
 
   if (!picked.length) {
-    // take top chunk sentences anyway (still grounded to source)
     const c0 = cited[0];
     const first = String(c0.text || '')
       .split(/(?<=[.!?])\s+/)
       .filter((s) => s.length > 25)
       .slice(0, 2);
     if (!first.length) {
-      return {
-        text: String(c0.text || '').slice(0, 500) + ' [' + c0.id + ']',
-        citations: [c0.id],
-      };
+      return { text: String(c0.text || '').slice(0, 500), citations: [c0.id] };
     }
-    return {
-      text: first.map((s) => s.trim() + ' [' + c0.id + ']').join(' '),
-      citations: [c0.id],
-    };
+    return { text: first.map((s) => s.trim()).join(' '), citations: [c0.id] };
   }
 
-  const text = picked.map((p) => p.s + ' [' + p.id + ']').join(' ');
-  return { text, citations: [...usedIds] };
+  return { text: picked.map((p) => p.s).join(' '), citations: [...usedIds] };
 }
