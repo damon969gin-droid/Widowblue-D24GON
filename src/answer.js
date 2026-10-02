@@ -1,3 +1,4 @@
+import { noAnswerMsg, detectLang } from './lang.js';
 /**
  * WidowBlue – motore di risposta chat
  * Naturale, filtrato, appropriato, approfondito.
@@ -10,7 +11,6 @@ const TEAMS_IT = [
   'Empoli','Venezia','Monza','Verona','Sassuolo','Cremonese','Pisa','Spezia',
 ];
 
-/** Glossario AI – definizioni concise IT (usate se la query le richiede) */
 const AI_GLOSSARY = {
   addestramento: {
     it: 'L\'addestramento (training) è il processo in cui un modello di machine learning regola i propri parametri sui dati, minimizzando un errore. Include di solito pre-training su grandi corpus e, se serve, fine-tuning su compiti specifici.',
@@ -122,21 +122,15 @@ function glossaryAnswer(query, lang) {
   return null;
 }
 
-/**
- * Sintesi principale: diretta, approfondita, filtrata.
- * Ragionamento a passi solo interno.
- */
 export function synthesizeAnswer(query, cited, priorAnswer, lang) {
   const ql = String(query || '').toLowerCase();
   const langCode = String(lang || 'it').slice(0, 2);
 
-  // Passo interno 1: classifica / fatti sportivi
   if (/classifica|primo|leader|in testa|capolista|standings|top of the table/i.test(ql)) {
     const stand = extractStandings(cited, priorAnswer);
     if (stand) return polish(stand, langCode);
   }
 
-  // Passo interno 2: glossario AI se domanda concettuale
   const gloss = glossaryAnswer(query, langCode);
   if (gloss) {
     const fromSources = extractive(query, cited);
@@ -146,7 +140,6 @@ export function synthesizeAnswer(query, cited, priorAnswer, lang) {
     return polish(gloss, langCode);
   }
 
-  // Passo interno 3: sintesi web prioritaria
   if (priorAnswer && priorAnswer.text && priorAnswer.text.length > 30) {
     let t = priorAnswer.text;
     if (/classifica|primo|serie a/i.test(ql)) {
@@ -157,13 +150,10 @@ export function synthesizeAnswer(query, cited, priorAnswer, lang) {
     return polish(deepened, langCode);
   }
 
-  // Passo interno 4: extractive multi-frase
   const ext = extractive(query, cited);
   if (ext) return polish(deepenFromSources(query, ext, cited, langCode), langCode);
 
-  return langCode === 'en'
-    ? 'I could not find a reliable answer from the available sources.'
-    : 'Non ho trovato una risposta chiara e aggiornata nelle fonti disponibili.';
+  return noAnswerMsg(langCode);
 }
 
 function mergeDeep(core, extra, lang) {
@@ -207,10 +197,7 @@ function extractStandingsFromText(text) {
   if (!t) return null;
   const leaders = [];
   for (const team of TEAMS_IT) {
-    const re = new RegExp(
-      '\\b' + team + '\\b[^.]{0,40}?(\\d{1,2})\\s*(?:punti|pts?|points)',
-      'i'
-    );
+    const re = new RegExp('\\b' + team + '\\b[^.]{0,40}?(\\d{1,2})\\s*(?:punti|pts?|points)', 'i');
     const m = t.match(re);
     if (m) leaders.push({ team, pts: parseInt(m[1], 10) });
   }
@@ -230,36 +217,18 @@ function extractStandingsFromText(text) {
     const top = ranked[0];
     if (ranked.length >= 2 && ranked[1].pts === top.pts) {
       const same = ranked.filter((x) => x.pts === top.pts).map((x) => x.team);
-      return (
-        'In classifica di Serie A, al momento in testa ci sono ' +
-        same.join(', ') +
-        ' a ' +
-        top.pts +
-        ' punti (a pari merito secondo le fonti disponibili).'
-      );
+      return 'In classifica di Serie A, al momento in testa ci sono ' + same.join(', ') + ' a ' + top.pts + ' punti (a pari merito secondo le fonti disponibili).';
     }
-    let out =
-      'In classifica di Serie A, al momento è prima ' +
-      top.team +
-      ' con ' +
-      top.pts +
-      ' punti';
+    let out = 'In classifica di Serie A, al momento è prima ' + top.team + ' con ' + top.pts + ' punti';
     if (ranked[1]) {
-      out +=
-        ', seguita da ' +
-        ranked[1].team +
-        ' (' +
-        ranked[1].pts +
-        ' punti)';
+      out += ', seguita da ' + ranked[1].team + ' (' + ranked[1].pts + ' punti)';
       if (ranked[2]) out += ' e ' + ranked[2].team + ' (' + ranked[2].pts + ' punti)';
     }
     out += ', secondo le fonti più recenti trovate.';
     return out;
   }
   const cap = t.match(/(?:capolista|in testa|leader)\s*[:=]?\s*([A-ZÀ-Ú][a-zà-ú]+)/i);
-  if (cap) {
-    return 'In Serie A, al momento risulta in testa ' + cap[1] + ', secondo le fonti disponibili.';
-  }
+  if (cap) return 'In Serie A, al momento risulta in testa ' + cap[1] + ', secondo le fonti disponibili.';
   return null;
 }
 
@@ -268,9 +237,7 @@ function extractive(query, cited) {
   const qTokens = tokenize(query);
   const scored = [];
   for (const c of cited) {
-    const sentences = String(c.text || '')
-      .split(/(?<=[.!?])\s+/)
-      .filter((s) => s.length > 25);
+    const sentences = String(c.text || '').split(/(?<=[.!?])\s+/).filter((s) => s.length > 25);
     for (const s of sentences) {
       const toks = tokenize(s);
       let hit = 0;
@@ -304,36 +271,29 @@ function tokenize(s) {
   );
 }
 
-/** Filtro contenuto + lingua + meta-pulizia */
 export function polish(text, lang) {
   let t = String(text || '').trim();
-
   t = t.replace(/\b([A-ZÀ-Ú][a-zà-ú]{2,})\s+\1\b/g, '$1');
-
-  // Meta / sistema
   t = t.replace(/The sources do not provide[^.]*\./gi, '');
   t = t.replace(/According to the sources[,:]?/gi, '');
   t = t.replace(/as of today's date[,:]?/gi, '');
   t = t.replace(/\b(partial standings|overall winner|definitive answer)\b/gi, '');
   t = t.replace(/\b(extractive|grounded|RAG|pipeline|provider|Workers AI|system prompt)\b/gi, '');
   t = t.replace(/\b(Step\s*\d+|Chain of thought:|Internal reasoning:)\b/gi, '');
-
-  // Filtro leggero contenuti inappropriati espliciti
   t = t.replace(/\b(how to (make|build) (a )?bomb|child sexual)\b/gi, '[contenuto rimosso]');
 
-  if (lang === 'it') {
-    const enMarkers = (t.match(/\b(the|and|with|from|points|followed|according|sources|does not)\b/gi) || []).length;
-    const itMarkers = (t.match(/\b(il|la|di|con|punti|seguita|secondo|classifica|prima|modello|addestr)\b/gi) || []).length;
-    if (enMarkers > itMarkers + 3) {
+  if (lang && lang !== 'en') {
+    const enMarkers = (t.match(/\b(the|and|with|from|points|followed|according|sources|does not|provide)\b/gi) || []).length;
+    const localHints = (t.match(/[àèéìòùäöüßñ¿¡\u3040-\u30ff\u4e00-\u9fff\uac00-\ud7af\u0400-\u04ff]/g) || []).length;
+    if (enMarkers > 4 && localHints < 2) {
       const stand = extractStandingsFromText(t);
-      if (stand) return stand;
-      const gloss = glossaryAnswer(t, 'it');
+      if (stand && lang === 'it') return stand;
+      const gloss = glossaryAnswer(t, lang);
       if (gloss) return gloss;
     }
   }
 
   t = t.replace(/\s{2,}/g, ' ').replace(/\n{3,}/g, '\n\n').trim();
-  // più spazio per risposte approfondite
   return t.slice(0, 2200);
 }
 
@@ -350,7 +310,6 @@ export function expandForIntent(q, lang) {
       out.push(base + ' live');
     }
   }
-  // Espansioni concetti AI
   if (/\b(llm|transformer|rag|fine-tuning|allucinaz)/i.test(base)) {
     out.push(base + ' spiegazione');
     out.push(base + ' definition explained');
