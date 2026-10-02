@@ -11,12 +11,13 @@ export const AI_CURRICULUM = [
     slug: 'basi-ai',
     domains: ['analysis', 'ml', 'search'],
     topics: [
-      { id: 'narrow-general', name: 'AI ristretta e generale', keywords: ['ai ristretta', 'agi', 'narrow ai', 'general ai', 'intelligenza generale'] },
-      { id: 'gen-pred', name: 'AI generativa e predittiva', keywords: ['generativa', 'predittiva', 'generative', 'predictive'] },
+      { id: 'narrow-general', name: 'AI ristretta e generale', keywords: ['ai ristretta', 'agi', 'narrow ai', 'general ai', 'intelligenza generale', 'superintelligenza', 'asi', 'artificial superintelligence'] },
+      { id: 'gen-pred', name: 'AI generativa e predittiva', keywords: ['generativa', 'predittiva', 'generative', 'predictive', 'ai generativa'] },
       { id: 'algorithm', name: 'Algoritmo', keywords: ['algoritmo', 'algorithm'] },
       { id: 'model', name: 'Modello', keywords: ['modello ai', 'model', 'modello di machine'] },
       { id: 'heuristic', name: 'Euristica', keywords: ['euristica', 'heuristic'] },
       { id: 'emergent', name: 'Comportamento emergente', keywords: ['emergente', 'emergent behavior', 'comportamento emergente'] },
+      { id: 'asi', name: 'Superintelligenza artificiale', keywords: ['superintelligenza', 'asi', 'artificial superintelligence'] },
     ],
   },
   {
@@ -39,11 +40,13 @@ export const AI_CURRICULUM = [
     slug: 'dati-training',
     domains: ['ml', 'code', 'analysis'],
     topics: [
-      { id: 'features', name: 'Dati e feature', keywords: ['feature', 'dataset', 'dati di addestramento', 'features'] },
-      { id: 'split', name: 'Training, validazione, test', keywords: ['training set', 'validation', 'test set', 'validazione', 'addestramento'] },
+      { id: 'features', name: 'Dati e feature', keywords: ['feature', 'dataset', 'dati di addestramento', 'features', 'addestramento'] },
+      { id: 'split', name: 'Training, validazione, test', keywords: ['training set', 'validation', 'test set', 'validazione', 'addestramento', 'pre-training', 'pretraining'] },
       { id: 'token', name: 'Token', keywords: ['token', 'tokenizzazione', 'tokenizer'] },
       { id: 'embedding', name: 'Embedding', keywords: ['embedding', 'vettore', 'embeddings'] },
       { id: 'finetune', name: 'Fine-tuning', keywords: ['fine-tuning', 'fine tuning', 'lora', 'qlora'] },
+      { id: 'distill', name: 'Distillazione', keywords: ['distillazione', 'distillation', 'knowledge distillation'] },
+      { id: 'pretrain', name: 'Pre-training', keywords: ['pre-training', 'pretraining', 'preaddestramento'] },
       { id: 'hyper', name: 'Iperparametri', keywords: ['iperparametri', 'hyperparameter', 'learning rate', 'batch size'] },
     ],
   },
@@ -72,6 +75,9 @@ export const AI_CURRICULUM = [
       { id: 'gpt-bert', name: 'GPT e BERT', keywords: ['gpt', 'bert', 'chatgpt'] },
       { id: 'multimodal', name: 'Multimodale', keywords: ['multimodale', 'multimodal', 'vision-language'] },
       { id: 'hallucination', name: 'Allucinazione', keywords: ['allucinazione', 'hallucination', 'allucinazioni'] },
+      { id: 'bias', name: 'Bias', keywords: ['bias', 'distorsione', 'fairness'] },
+      { id: 'cot', name: 'Chain of thought', keywords: ['chain of thought', 'catena del pensiero', 'cot'] },
+      { id: 'prompt-eng', name: 'Prompt engineering', keywords: ['prompt engineering', 'ingegneria del prompt', 'prompt'] },
     ],
   },
   {
@@ -94,7 +100,7 @@ export const AI_CURRICULUM = [
     slug: 'agenti',
     domains: ['search', 'code', 'analysis', 'ml'],
     topics: [
-      { id: 'agent', name: 'Agente AI', keywords: ['agente ai', 'ai agent', 'agente'] },
+      { id: 'agent', name: 'Agente AI', keywords: ['agente ai', 'ai agent', 'agente', 'prompt engineering'] },
       { id: 'agentic', name: 'AI agentica', keywords: ['agentica', 'agentic', 'multi-agente', 'multi agent'] },
       { id: 'tools', name: 'Strumenti', keywords: ['tool use', 'function calling', 'strumenti ai'] },
       { id: 'rag', name: 'RAG', keywords: ['rag', 'retrieval augmented', 'retrieval-augmented'] },
@@ -104,7 +110,6 @@ export const AI_CURRICULUM = [
   },
 ];
 
-/** Specialità curriculum da mescolare nel catalogo agenti */
 export const CURRICULUM_SPECS = [
   { s: 'ai-foundations', domain: 'ml', task: 'Spiega basi AI ristretta/generale', part: 1 },
   { s: 'gen-vs-pred', domain: 'ml', task: 'Distingue AI generativa e predittiva', part: 1 },
@@ -142,12 +147,14 @@ export const CURRICULUM_SPECS = [
   { s: 'rag-pipeline', domain: 'search', task: 'Pipeline RAG retrieval+generate', part: 7 },
   { s: 'mcp-protocol', domain: 'code', task: 'MCP e connettori strumenti', part: 7 },
   { s: 'orchestration', domain: 'analysis', task: 'Orchestrazione multi-agente', part: 7 },
+  { s: 'prompt-engineering', domain: 'ml', task: 'Prompt engineering e istruzioni', part: 5 },
+  { s: 'cot-reasoning', domain: 'analysis', task: 'Ragionamento a catena di passi', part: 5 },
+  { s: 'bias-audit', domain: 'analysis', task: 'Analisi bias e fairness', part: 5 },
+  { s: 'distillation', domain: 'ml', task: 'Knowledge distillation', part: 3 },
+  { s: 'pretraining', domain: 'ml', task: 'Pre-training su grandi corpus', part: 3 },
+  { s: 'asi-concepts', domain: 'analysis', task: 'Superintelligenza e scenari ASI', part: 1 },
 ];
 
-/**
- * Trova parti/topic del curriculum che matchano la query.
- * Ritorna [] se nessun match (chat resta invariata).
- */
 export function matchCurriculum(query) {
   const q = String(query || '').toLowerCase();
   if (!q || q.length < 3) return [];
@@ -159,7 +166,6 @@ export function matchCurriculum(query) {
         matchedTopics.push({ id: t.id, name: t.name });
       }
     }
-    // match sul titolo della parte
     if (!matchedTopics.length) {
       const titleBits = part.title.toLowerCase().split(/\s+/).filter((w) => w.length > 4);
       if (titleBits.some((w) => q.includes(w))) {
@@ -179,7 +185,6 @@ export function matchCurriculum(query) {
   return hits;
 }
 
-/** Domini prioritari derivati dal curriculum match */
 export function curriculumDomains(query) {
   const hits = matchCurriculum(query);
   const set = new Set();
