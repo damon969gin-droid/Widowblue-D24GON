@@ -6,6 +6,16 @@ compatibility_date = "2026-09-01"
 directory = "./frontend"
 binding = "ASSETS"
 
+# Cloudflare D1 (database)
+# 1) npx wrangler d1 create widowblue-db
+# 2) incolla database_id qui sotto
+# 3) npx wrangler d1 execute widowblue-db --remote --file=./migrations/0001_init.sql
+# 4) POST /api/agents/seed  (opzionale, popola 453 agenti)
+# [[d1_databases]]
+# binding = "DB"
+# database_name = "widowblue-db"
+# database_id = "YOUR_D1_DATABASE_ID"
+
 # Optional: Cloudflare Workers AI for RAG generation
 # Dashboard → Worker → Settings → Bindings → Add → Workers AI → name: AI
 # [ai]
