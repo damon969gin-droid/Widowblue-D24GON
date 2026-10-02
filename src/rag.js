@@ -1,9 +1,11 @@
 /**
  * WidowBlue – RAG: Deep Search + Grounded Generation
  * Answers are user-facing: analyze sources, reason, reply. No system meta.
+ * Conversation context filters off-topic results (Serie A ≠ F1).
  */
 
 import { modularSearch } from './search.js';
+import { filterResultsByContext } from './context.js';
 
 const MAX_CHUNKS_STD = 8;
 const MAX_CHUNKS_DEEP = 16;
@@ -18,14 +20,26 @@ export async function runRAG(query, opts = {}) {
   const lang = String(opts.lang || 'it').slice(0, 2);
   const env = opts.env || {};
   const history = Array.isArray(opts.history) ? opts.history : [];
+  const convCtx = opts.context || null;
 
   const retrieval = await deepRetrieve(q, { deep, env, lang });
-  const docs = retrieval.docs;
+  let docs = retrieval.docs;
   const searchPrimary = retrieval.primary;
+
+  if (convCtx) {
+    docs = filterResultsByContext(docs, convCtx);
+    if (searchPrimary && Array.isArray(searchPrimary.results)) {
+      searchPrimary.results = filterResultsByContext(searchPrimary.results, convCtx);
+    }
+  }
 
   const chunks = chunkDocuments(docs);
   const maxChunks = deep ? MAX_CHUNKS_DEEP : MAX_CHUNKS_STD;
-  const ranked = rankChunks(q, chunks).slice(0, maxChunks);
+  const rankQ =
+    convCtx && convCtx.keywords && convCtx.keywords.length
+      ? q + ' ' + convCtx.keywords.slice(0, 6).join(' ')
+      : q;
+  const ranked = rankChunks(rankQ, chunks).slice(0, maxChunks);
 
   const maxCtx = deep ? MAX_CONTEXT_DEEP : MAX_CONTEXT_STD;
   const { pack: contextPack, cited } = buildContextPack(ranked, maxCtx);
@@ -36,6 +50,9 @@ export async function runRAG(query, opts = {}) {
     history,
     priorAnswer: searchPrimary.answer,
     deep,
+    topic: convCtx && convCtx.topic,
+    entity: convCtx && convCtx.entity,
+    domain: convCtx && convCtx.domain,
   });
 
   const sources = cited
@@ -54,7 +71,6 @@ export async function runRAG(query, opts = {}) {
     }, [])
     .slice(0, deep ? 10 : 6);
 
-  // Prefer clean answer text; attach results for UI sources
   const cleanText = sanitizeUserText(generation.text);
 
   return {
@@ -80,11 +96,13 @@ export async function runRAG(query, opts = {}) {
       grounded: true,
       deep,
       sources,
+      topic: convCtx && convCtx.topic,
+      domain: convCtx && convCtx.domain,
     },
     search: searchPrimary,
     webLive: !!searchPrimary.webLive,
     providers: searchPrimary.providers,
-    results: searchPrimary.results,
+    results: (searchPrimary.results || docs).slice(0, deep ? 12 : 8),
     policy: { respectful: true, grounded: true },
     fetchedAt: Date.now(),
   };
@@ -290,6 +308,13 @@ async function groundedGenerate(query, context, cited, opts) {
     { it: 'italiano', en: 'English', es: 'español', fr: 'français', de: 'Deutsch', pt: 'português' }[lang] ||
     'italiano';
 
+  let topicHint = '';
+  if (opts.topic || opts.entity) {
+    topicHint =
+      ' Resta sul tema della conversazione: ' +
+      [opts.entity, opts.topic].filter(Boolean).join(' / ') +
+      '. Non cambiare argomento (es. se si parla di Serie A non parlare di Formula 1).';
+  }
   const system =
     'Sei WidowBlue, assistente di ricerca. Rispondi SOLO in ' +
     langName +
@@ -297,7 +322,8 @@ async function groundedGenerate(query, context, cited, opts) {
     'Analizza il contesto, ragiona e dai la risposta più chiara e utile alla domanda. ' +
     'Usa SOLO fatti presenti nel contesto. Non inventare. ' +
     'Non menzionare sistemi, pipeline, RAG, provider, API o dettagli tecnici. ' +
-    'Scrivi in prosa naturale, max ' +
+    topicHint +
+    ' Scrivi in prosa naturale, max ' +
     (opts.deep ? '8' : '5') +
     ' frasi. Se il contesto non basta, dillo in modo semplice.';
 
