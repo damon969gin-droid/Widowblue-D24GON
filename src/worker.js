@@ -1,5 +1,5 @@
 /**
- * WidowBlue Worker – Auth + Search + RAG + Image + Orchestrator
+ * WidowBlue Worker – Auth + Search + RAG + Image + Orchestrator + Agents + D1
  * Superadmin: giorgi.daniele96@gmail.com
  */
 
@@ -7,6 +7,8 @@ import { modularSearch } from './search.js';
 import { runRAG } from './rag.js';
 import { isImageRequest, generateImage } from './image.js';
 import { buildConversationContext } from './context.js';
+import { agentStats, selectAgentsForTask, getAgentCatalog } from './agents.js';
+import { hasDB, dbHealth, listAgents, ensureAgentsSeeded, logSearch } from './db.js';
 
 const ADMIN_EMAIL = 'giorgi.daniele96@gmail.com';
 const SESSION_TTL_SEC = 60 * 60 * 24 * 7;
@@ -32,6 +34,7 @@ async function handleApi(request, env, url) {
 
   try {
     if (url.pathname === '/api/health') {
+      const db = await dbHealth(env);
       return json(
         {
           ok: true,
@@ -42,6 +45,9 @@ async function handleApi(request, env, url) {
           image: true,
           workersAI: !!env.AI,
           kv: !!env.AUTH_KV,
+          d1: hasDB(env),
+          d1Health: db,
+          agents: agentStats().total,
           tavily: !!env.TAVILY_API_KEY,
           serper: !!env.SERPER_API_KEY,
           brave: !!env.BRAVE_API_KEY,
@@ -55,6 +61,9 @@ async function handleApi(request, env, url) {
             '/api/rag',
             '/api/image',
             '/api/orchestrate',
+            '/api/agents',
+            '/api/agents/stats',
+            '/api/agents/seed',
           ],
         },
         200,
@@ -67,6 +76,27 @@ async function handleApi(request, env, url) {
     if (url.pathname === '/api/auth/logout' && request.method === 'POST') return logout(request, env, cors);
     if (url.pathname === '/api/auth/me' && request.method === 'GET') return me(request, env, cors);
     if (url.pathname === '/api/auth/timed-key' && request.method === 'POST') return timedKey(request, env, cors);
+
+    if (url.pathname === '/api/agents' && request.method === 'GET') {
+      const role = url.searchParams.get('role') || undefined;
+      const shell = url.searchParams.get('shell');
+      const limit = url.searchParams.get('limit') || '50';
+      const data = await listAgents(env, {
+        role,
+        shell: shell != null && shell !== '' ? shell : undefined,
+        limit: Number(limit) || 50,
+      });
+      return json({ ok: true, ...data }, 200, cors);
+    }
+    if (url.pathname === '/api/agents/stats' && request.method === 'GET') {
+      const stats = agentStats();
+      const db = await dbHealth(env);
+      return json({ ok: true, stats, db }, 200, cors);
+    }
+    if (url.pathname === '/api/agents/seed' && request.method === 'POST') {
+      const r = await ensureAgentsSeeded(env);
+      return json({ ok: !r.error, ...r }, r.error ? 500 : 200, cors);
+    }
 
     if (url.pathname === '/api/search' && request.method === 'POST') return handleSearch(request, env, cors);
     if (url.pathname === '/api/rag' && request.method === 'POST') return handleRAG(request, env, cors);
@@ -229,11 +259,17 @@ async function handleOrchestrate(request, env, cors) {
     entity = String(search.answer.title).replace(/\s*\((IT|EN|[A-Z]{2})\)\s*$/i, '').trim();
   }
 
+  const allMode = !!body.allAgents || !!body.allMode;
+  const agentsSelected = selectAgentsForTask({ query: ctx.query || prompt, allMode });
   const plan = buildPlan(prompt, attachments, deep, search);
+  plan.agents = agentsSelected.map((a) => ({ id: a.id, name: a.name, role: a.role, shell: a.shell }));
+
   return json(
     {
       ok: true,
       plan,
+      agents: plan.agents,
+      agentsCount: agentsSelected.length,
       search,
       conversation: {
         followUp: ctx.followUp,
