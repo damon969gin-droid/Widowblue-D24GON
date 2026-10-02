@@ -1,4 +1,4 @@
-/* WidowBlue app – chat, voice, upload, agents, image, history */
+/* WidowBlue app – chat, voice, upload, agents, image, history, multi-lang */
 const logEl=document.getElementById('log'),files=[];
 function scrollLog(){
   if(!logEl)return;
@@ -170,14 +170,44 @@ function formatSearchAnswer(data){
   return {html,plain,imageUrl:(data.image&&data.image.url)||data.imageUrl||null};
 }
 
-const LANGS=[['it','IT'],['en','EN'],['es','ES'],['fr','FR'],['de','DE'],['pt','PT']];
+const LANGS=[
+  ['auto','AUTO'],
+  ['it','IT'],['en','EN'],['es','ES'],['fr','FR'],['de','DE'],['pt','PT'],
+  ['ja','JA'],['zh','ZH'],['ko','KO'],['ar','AR'],['ru','RU'],['hi','HI'],['tr','TR'],['nl','NL'],['pl','PL']
+];
+function detectInputLang(text){
+  const t=String(text||'');
+  if(/[\u3040-\u30ff]/.test(t))return 'ja';
+  if(/[\u4e00-\u9fff]/.test(t))return 'zh';
+  if(/[\uac00-\ud7af]/.test(t))return 'ko';
+  if(/[\u0600-\u06ff]/.test(t))return 'ar';
+  if(/[\u0400-\u04ff]/.test(t))return 'ru';
+  if(/[àèéìòù]/i.test(t)||/\b(che|cosa|quando|dove|perché|ciao)\b/i.test(t))return 'it';
+  if(/[äöüß]/i.test(t))return 'de';
+  if(/[ñ¿¡]/i.test(t))return 'es';
+  if(/\b(what|when|where|the|and)\b/i.test(t))return 'en';
+  return 'en';
+}
+async function translateClient(text, from, to){
+  const q=String(text||'').trim().slice(0,450);
+  if(!q||!to||to==='auto'||from===to)return q;
+  try{
+    const url='https://api.mymemory.translated.net/get?q='+encodeURIComponent(q)+'&langpair='+encodeURIComponent((from||'autodetect')+'|'+to);
+    const res=await fetch(url);
+    if(!res.ok)return q;
+    const data=await res.json();
+    const out=(data&&data.responseData&&data.responseData.translatedText)||'';
+    if(!out||/INVALID|QUERY LENGTH|WARNING/i.test(out))return q;
+    return String(out).trim();
+  }catch(e){return q}
+}
 const langSel=document.getElementById('lang');
 if(langSel){
   LANGS.forEach(([v,l])=>{const o=document.createElement('option');o.value=v;o.textContent=l;langSel.appendChild(o)});
   try{const sl=localStorage.getItem('wb_lang');if(sl)langSel.value=sl}catch(e){}
   langSel.onchange=()=>{try{localStorage.setItem('wb_lang',langSel.value)}catch(e){}};
 }
-function currentLang(){return (langSel&&langSel.value)||'it'}
+function currentLang(){return (langSel&&langSel.value)||'auto'}
 
 const qEl=document.getElementById('q');
 const goBtn=document.getElementById('go');
@@ -242,7 +272,9 @@ if(voiceBtn){
     if(!SR){say('Sistema','Riconoscimento vocale non supportato');return}
     if(recognition){try{recognition.stop()}catch(e){}recognition=null;voiceBtn.classList.remove('rec');return}
     recognition=new SR();
-    recognition.lang=(currentLang()==='it'?'it-IT':currentLang()==='en'?'en-US':currentLang());
+    const vl=currentLang();
+    const voiceMap={it:'it-IT',en:'en-US',es:'es-ES',fr:'fr-FR',de:'de-DE',pt:'pt-PT',ja:'ja-JP',zh:'zh-CN',ko:'ko-KR',ar:'ar-SA',ru:'ru-RU'};
+    recognition.lang=voiceMap[vl]||(vl==='auto'?'it-IT':vl);
     recognition.interimResults=false;
     recognition.onresult=(ev)=>{
       const t=ev.results[0][0].transcript;
@@ -315,28 +347,41 @@ async function sendQuery(){
   const chips=document.getElementById('chips');
   if(chips)chips.innerHTML='';
 
+  const langSelVal=currentLang();
+  const detected=detectInputLang(text||'');
+  let displayText=text||'(allegati)';
+  let queryForApi=text||'';
+  if(langSelVal&&langSelVal!=='auto'&&text&&detected!==langSelVal){
+    const tr=await translateClient(text, detected, langSelVal);
+    if(tr){displayText=tr;queryForApi=tr}
+  }
   const userDiv=document.createElement('div');
   userDiv.className='msg user';
-  userDiv.textContent=text||'(allegati)';
+  userDiv.textContent=displayText;
+  if(text&&displayText!==text){
+    const note=document.createElement('div');
+    note.className='atts';
+    note.textContent='← '+text;
+    userDiv.appendChild(note);
+  }
   if(atts.length){const ad=document.createElement('div');ad.className='atts';ad.textContent=atts.map(a=>a.name).join(', ');userDiv.appendChild(ad)}
   if(logEl){logEl.appendChild(userDiv);updateLogTouchMode();scrollLog()}
-  // Impulsi rete = durata ragionamento (API)
   if(window.WBNet&&window.WBNet.setRunning){
     window.WBNet.setRunning(true);
   }else if(window.WBNet&&window.WBNet.ignite){
     window.running=true;
     window.WBNet.ignite();
   }
-  threadMessages.push({role:'user',text:text,at:Date.now()});
-  pushMemory('user',text);
+  threadMessages.push({role:'user',text:displayText,original:text,at:Date.now()});
+  pushMemory('user',displayText);
 
-  const lang=currentLang();
+  const lang=langSelVal==='auto'?detected:langSelVal;
   const history=chatMemory.slice(-12).map(m=>({role:m.role,text:m.text,entity:m.entity}));
   try{
     if(typeof WB!=='undefined'&&WB.api){
       const body={
-        query:text,
-        prompt:text,
+        query:queryForApi||text,
+        prompt:queryForApi||text,
         deep:true,
         lang,
         history,
