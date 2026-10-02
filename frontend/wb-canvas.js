@@ -79,14 +79,15 @@ function igniteNetwork(){
   });
   for(let i=0;i<12;i++){
     const kids=nodes[i].kids||[];
-    for(let k=0;k<Math.min(kids.length,3);k++){
-      pulses.push({from:i,to:kids[k],t:Math.random()*0.4});
+    for(let k=0;k<Math.min(kids.length,12);k++){
+      pulses.push({from:i,to:kids[k],t:Math.random()*0.5});
     }
     pulses.push({from:i,to:(i+1)%12,t:Math.random()*0.3});
     pulses.push({from:i,to:(i+3)%12,t:Math.random()*0.5});
+    pulses.push({from:i,to:(i+5)%12,t:Math.random()*0.6});
   }
-  for(let p=0;p<12;p++){
-    const e=EDGE[(Math.random()*Math.min(EDGE.length,2000))|0];
+  for(let p=0;p<60;p++){
+    const e=EDGE[(Math.random()*Math.min(EDGE.length,3000))|0];
     if(e) pulses.push({from:e[0],to:e[1],t:Math.random()});
   }
 }
@@ -149,7 +150,6 @@ function draw(){
     if(!(fullNet||strength>.04))continue;
     const A=P[a],B=P[b];if(!A||!B)continue;
     if(fullNet){
-      // linee più marcate, senza glow/neon
       x.globalAlpha=.22+strength*.32;
       x.strokeStyle=strength>.4?'rgba(220,170,90,.9)':'rgba(90,185,205,.85)';
       x.lineWidth=1.15+strength*1.1;
@@ -172,18 +172,25 @@ function draw(){
   }
 
   x.globalAlpha=1;
+  // Impulsi più veloci e frequenti
   for(let i=pulses.length-1;i>=0;i--){
-    const p=pulses[i];p.t+=.032;if(p.t>1){pulses.splice(i,1);continue}
+    const p=pulses[i];p.t+=.048;if(p.t>1){pulses.splice(i,1);continue}
     const a=p.from>=0?P[p.from]:[cx,cy],b=P[p.to];if(!a||!b)continue;
     const px=a[0]+(b[0]-a[0])*p.t,py=a[1]+(b[1]-a[1])*p.t;
     x.strokeStyle='rgba(210,165,90,.65)';x.lineWidth=1.6;x.globalAlpha=.6*(1-p.t);
     x.beginPath();x.moveTo(a[0]+(b[0]-a[0])*Math.max(0,p.t-.12),a[1]+(b[1]-a[1])*Math.max(0,p.t-.12));x.lineTo(px,py);x.stroke();
     x.globalAlpha=.7;x.fillStyle='rgba(220,170,100,.85)';x.beginPath();x.arc(px,py,2.4,0,6.283);x.fill();
   }
-  if(fullNet&&pulses.length<12){
-    for(let k=0;k<2;k++){
-      const e=EDGE[(Math.random()*Math.min(EDGE.length,1500))|0];
-      if(e) pulses.push({from:e[0],to:e[1],t:0});
+  if(fullNet&&pulses.length<90){
+    for(let k=0;k<14;k++){
+      const e=EDGE[(Math.random()*Math.min(EDGE.length,3000))|0];
+      if(e) pulses.push({from:e[0],to:e[1],t:Math.random()*0.2});
+    }
+  }
+  if(!fullNet&&nodes.some(n=>n.act>.2)&&pulses.length<24){
+    for(let k=0;k<4;k++){
+      const e=EDGE[(Math.random()*Math.min(EDGE.length,1000))|0];
+      if(e&&nodes[e[0]]&&nodes[e[0]].act>.15) pulses.push({from:e[0],to:e[1],t:0});
     }
   }
 
