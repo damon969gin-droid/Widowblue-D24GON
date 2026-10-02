@@ -54,6 +54,7 @@ canvas{position:fixed;inset:0;width:100%;height:100%;touch-action:none;cursor:gr
 #log .msg.reply a:hover{color:var(--am)}
 #log .msg.reply .msg-actions{display:flex;gap:6px;margin-top:8px;padding-top:8px;border-top:1px solid rgba(77,225,255,.12);flex-wrap:wrap}
 #log .msg.reply .msg-actions button{height:28px;padding:0 10px;font-size:12px;border-radius:4px;background:rgba(4,10,18,.4)}
+#log .msg.reply .gen-img{display:block;max-width:100%;max-height:min(50vh,420px);border-radius:8px;margin:8px 0;border:1px solid rgba(77,225,255,.25)}
 #log .atts{font-size:11px;color:var(--am);margin-top:2px}
 #chips{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px;max-width:720px;margin-left:auto;margin-right:auto}
 .chip{font-size:12px;padding:3px 8px;border-radius:4px;background:rgba(77,225,255,.12);border:1px solid rgba(77,225,255,.35);cursor:pointer}
@@ -67,13 +68,17 @@ button:disabled{opacity:.5}button.rec{border-color:#ff6b6b;color:#ff6b6b;animati
 #panel,#overlay{display:none!important}
 .toggle{font-size:12px;padding:4px 10px;border-radius:4px;border:1px solid rgba(77,225,255,.35);background:rgba(4,10,18,.35);color:var(--dim);cursor:pointer;margin-bottom:4px;margin-right:6px}
 .toggle.on{color:var(--am);border-color:var(--am)}
+.toggles{display:flex;flex-wrap:wrap;gap:4px;max-width:720px;margin:0 auto 4px}
 </style></head><body>
 <canvas id="c"></canvas>
 <div class="top"><h1>WIDOW BLUE</h1><p>Chat continua · trascina per ruotare la rete</p></div>
 <div class="stat"><b id="n">0</b>attivi su <span id="t">432</span> agenti</div>
 <div class="bot">
 <div id="log"></div>
+<div class="toggles">
+<button type="button" class="toggle" id="newChat">Nuova chat</button>
 <button type="button" class="toggle" id="allAgents">Tutti gli agenti: no</button>
+</div>
 <div id="chips"></div>
 <div class="row">
 <button class="plus sec" id="clip" type="button">+</button>
