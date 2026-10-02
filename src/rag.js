@@ -1,11 +1,11 @@
 /**
- * WidowBlue – RAG + sintesi stile assistente
- * Risposte dirette, lingua utente, no meta di sistema.
+ * WidowBlue – RAG + sintesi multilanguage
  */
 
 import { modularSearch } from './search.js';
 import { filterResultsByContext } from './context.js';
 import { synthesizeAnswer, expandForIntent, polish } from './answer.js';
+import { langName, noAnswerMsg } from './lang.js';
 
 const MAX_CHUNKS_STD = 8;
 const MAX_CHUNKS_DEEP = 16;
@@ -265,9 +265,7 @@ function buildContextPack(ranked, maxChars) {
 async function groundedGenerate(query, context, cited, opts) {
   const lang = opts.lang || 'it';
   const env = opts.env || {};
-  const langName =
-    { it: 'italiano', en: 'English', es: 'español', fr: 'français', de: 'Deutsch', pt: 'português' }[lang] ||
-    'italiano';
+  const langLabel = langName(lang);
 
   let topicHint = '';
   if (opts.topic || opts.entity) {
@@ -280,7 +278,7 @@ async function groundedGenerate(query, context, cited, opts) {
   const system =
     'Sei un assistente di ricerca esperto, chiaro e affidabile. ' +
     'Rispondi ESCLUSIVAMENTE in ' +
-    langName +
+    langLabel +
     '. ' +
     'Prima ragiona internamente in passi (chain of thought), poi scrivi SOLO la risposta finale: naturale, completa e approfondita (3-8 frasi se serve). ' +
     'Usa i fatti del contesto; non inventare. Se non sei sicuro, dillo. ' +
@@ -289,7 +287,7 @@ async function groundedGenerate(query, context, cited, opts) {
     'Non mostrare i passi del ragionamento interno. ' +
     topicHint +
     ' Lingua obbligatoria: ' +
-    langName +
+    langLabel +
     '.';
 
   const synth = synthesizeAnswer(query, cited, opts.priorAnswer, lang);
@@ -300,7 +298,7 @@ async function groundedGenerate(query, context, cited, opts) {
           env.AI,
           query,
           context,
-          system + ' Parti da questa bozza e migliorala solo se necessario: ' + synth
+          system + ' Improve only if needed, stay in ' + langLabel + ': ' + synth
         );
         if (refined && refined.length > 15) {
           return {
@@ -358,10 +356,7 @@ async function groundedGenerate(query, context, cited, opts) {
   }
 
   return {
-    text:
-      lang === 'en'
-        ? 'I could not find a reliable answer from the available sources.'
-        : 'Non ho trovato una risposta chiara e aggiornata nelle fonti disponibili.',
+    text: noAnswerMsg(lang),
     provider: 'empty',
     title: '',
     citations: [],
@@ -370,11 +365,11 @@ async function groundedGenerate(query, context, cited, opts) {
 
 async function generateWithWorkersAI(AI, query, context, system) {
   const user =
-    'Domanda dell\'utente: ' +
+    'User question: ' +
     query +
-    '\n\nFonti:\n' +
+    '\n\nSources:\n' +
     context +
-    '\n\nRispondi in modo diretto e naturale:';
+    '\n\nAnswer directly in the required language:';
   const res = await AI.run('@cf/meta/llama-3.1-8b-instruct', {
     messages: [
       { role: 'system', content: system },
