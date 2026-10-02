@@ -7,7 +7,7 @@ import { modularSearch } from './search.js';
 import { runRAG } from './rag.js';
 import { isImageRequest, generateImage } from './image.js';
 import { buildConversationContext } from './context.js';
-import { agentStats, selectAgentsForTask, runAgentContributions, detectIntent, getAgentCatalog } from './agents.js';
+import { agentStats, selectAgentsForTask, runAgentContributions, detectIntent, getAgentCatalog, curriculumSummary, matchCurriculum } from './agents.js';
 import { hasDB, dbHealth, listAgents, ensureAgentsSeeded, logSearch } from './db.js';
 
 const ADMIN_EMAIL = 'giorgi.daniele96@gmail.com';
@@ -44,6 +44,7 @@ async function handleApi(request, env, url) {
           rag: true,
           image: true,
           multiAgent: true,
+          curriculum: true,
           workersAI: !!env.AI,
           kv: !!env.AUTH_KV,
           d1: hasDB(env),
@@ -66,6 +67,7 @@ async function handleApi(request, env, url) {
             '/api/agents',
             '/api/agents/stats',
             '/api/agents/seed',
+            '/api/curriculum',
           ],
         },
         200,
@@ -89,7 +91,6 @@ async function handleApi(request, env, url) {
         shell: shell != null && shell !== '' ? shell : undefined,
         limit: Number(limit) || 50,
       });
-      // filter domain in-memory if needed
       if (domain && data.agents) {
         data.agents = data.agents.filter((a) => a.domain === domain || !a.domain);
         if (data.source === 'memory') {
@@ -105,7 +106,14 @@ async function handleApi(request, env, url) {
       const db = await dbHealth(env);
       const sample = selectAgentsForTask({ query: url.searchParams.get('q') || 'ricerca web', allMode: false });
       return json(
-        { ok: true, stats, db, sampleIntent: sample.intent, sampleTeam: sample.agents.slice(0, 12) },
+        {
+          ok: true,
+          stats,
+          db,
+          sampleIntent: sample.intent,
+          sampleTeam: sample.agents.slice(0, 12),
+          curriculum: sample.curriculum || curriculumSummary(),
+        },
         200,
         cors
       );
@@ -119,6 +127,21 @@ async function handleApi(request, env, url) {
     if (url.pathname === '/api/rag' && request.method === 'POST') return handleRAG(request, env, cors);
     if (url.pathname === '/api/image' && request.method === 'POST') return handleImage(request, env, cors);
     if (url.pathname === '/api/orchestrate' && request.method === 'POST') return handleOrchestrate(request, env, cors);
+
+    if (url.pathname === '/api/curriculum' && request.method === 'GET') {
+      const q = url.searchParams.get('q') || '';
+      const hits = q ? matchCurriculum(q) : [];
+      return json(
+        {
+          ok: true,
+          parts: curriculumSummary(),
+          match: hits,
+          matched: hits.length > 0,
+        },
+        200,
+        cors
+      );
+    }
 
     return json({ error: 'not_found' }, 404, cors);
   } catch (e) {
@@ -199,6 +222,7 @@ async function handleSearch(request, env, cors) {
     data.intent = selection.intent;
     data.agents = selection.agents;
     data.agentsCount = selection.count;
+    if (selection.curriculum) data.curriculum = selection.curriculum;
     data.agentPipeline = {
       intent: pipeline.intent,
       domains: pipeline.domains,
@@ -217,6 +241,7 @@ async function handleSearch(request, env, cors) {
   data.intent = selection.intent;
   data.agents = selection.agents;
   data.agentsCount = selection.count;
+  if (selection.curriculum) data.curriculum = selection.curriculum;
   return json(data, 200, cors);
 }
 
@@ -246,6 +271,7 @@ async function handleRAG(request, env, cors) {
   data.contextDomain = ctx.domain;
   data.intent = selection.intent;
   data.agentsCount = selection.count;
+  if (selection.curriculum) data.curriculum = selection.curriculum;
   return json(data, 200, cors);
 }
 
@@ -338,6 +364,7 @@ async function handleOrchestrate(request, env, cors) {
       agents: selection.agents,
       agentsCount: selection.count,
       agentPipeline: pipeline,
+      curriculum: selection.curriculum,
       search,
       conversation: {
         followUp: ctx.followUp,
@@ -544,7 +571,7 @@ async function getSession(env, request) {
     await env.AUTH_KV.delete('sess:' + token);
     return null;
   }
-  return { ...sess, token };
+  return sess;
 }
 
 async function logout(request, env, cors) {
@@ -556,38 +583,39 @@ async function logout(request, env, cors) {
 }
 
 async function me(request, env, cors) {
-  const sess = await getSession(env, request);
-  if (!sess) return json({ error: 'unauthorized' }, 401, cors);
-  return json({ email: sess.email, role: sess.role, isAdmin: isAdmin(sess.email) }, 200, cors);
+  try {
+    const sess = await getSession(env, request);
+    if (!sess) return json({ error: 'unauthorized' }, 401, cors);
+    return json({ ok: true, email: sess.email, role: sess.role }, 200, cors);
+  } catch (e) {
+    if (e.code === 'no_kv') return json({ error: 'kv_not_configured' }, 503, cors);
+    throw e;
+  }
 }
 
 async function timedKey(request, env, cors) {
-  const sess = await getSession(env, request);
-  if (!sess || !isAdmin(sess.email)) return json({ error: 'forbidden' }, 403, cors);
-  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789abcdefghjkmnpqrstuvwxyz';
-  const arr = crypto.getRandomValues(new Uint8Array(20));
-  let key = '';
-  for (let i = 0; i < 20; i++) key += chars[arr[i] % chars.length];
-  const ttl = 60;
-  await env.AUTH_KV.put('tkey:' + key, JSON.stringify({ email: sess.email, exp: Date.now() + ttl * 1000 }), {
-    expirationTtl: ttl,
-  });
-  await logSpider(env, 'timed_key_issued', sess.email, request);
-  return json({ key, expiresIn: ttl }, 200, cors);
+  try {
+    const sess = await getSession(env, request);
+    if (!sess || sess.role !== 'superadmin') return json({ error: 'forbidden' }, 403, cors);
+    const key = randomToken(16);
+    const ttl = 90;
+    await env.AUTH_KV.put('timed:' + key, JSON.stringify({ by: sess.email, exp: Date.now() + ttl * 1000 }), {
+      expirationTtl: ttl,
+    });
+    return json({ ok: true, key, ttlSec: ttl }, 200, cors);
+  } catch (e) {
+    if (e.code === 'no_kv') return json({ error: 'kv_not_configured' }, 503, cors);
+    throw e;
+  }
 }
 
-async function logSpider(env, type, email, request) {
-  if (!env.AUTH_KV) return;
-  const id = 'spider:' + Date.now() + ':' + randomToken(4);
-  await env.AUTH_KV.put(
-    id,
-    JSON.stringify({
-      type,
-      email: email || null,
-      ip: request.headers.get('CF-Connecting-IP') || null,
-      ua: request.headers.get('User-Agent') || null,
-      at: Date.now(),
-    }),
-    { expirationTtl: 60 * 60 * 24 * 30 }
-  );
+async function logSpider(env, event, email, request) {
+  try {
+    if (!env.AUTH_KV) return;
+    const ip = request.headers.get('CF-Connecting-IP') || 'unknown';
+    const entry = { event, email, ip, at: Date.now(), ua: (request.headers.get('User-Agent') || '').slice(0, 120) };
+    await env.AUTH_KV.put('spider:' + Date.now() + ':' + randomToken(4), JSON.stringify(entry), {
+      expirationTtl: 60 * 60 * 24 * 14,
+    });
+  } catch (_) {}
 }
