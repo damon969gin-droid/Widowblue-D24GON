@@ -64,7 +64,6 @@ function proj(p){
 const pulses=[];
 
 function syncFlags(){
-  // Legge lo stato esposto da wb-app / WBNet
   if(window.WBNet){
     if(typeof window.WBNet.allMode==='boolean') allMode=window.WBNet.allMode;
     if(typeof window.WBNet.running==='boolean') running=window.WBNet.running;
@@ -74,23 +73,19 @@ function syncFlags(){
 }
 
 function igniteNetwork(){
-  // Accende leader + worker e crea impulsi sulle connessioni
-  nodes.forEach((n,i)=>{
-    if(n.k===0) n.act=1;
-    else n.act=0.55+Math.random()*0.45;
+  nodes.forEach((n)=>{
+    if(n.k===0) n.act=0.85;
+    else n.act=0.35+Math.random()*0.35;
   });
-  // Impulsi dai leader ai figli
   for(let i=0;i<12;i++){
     const kids=nodes[i].kids||[];
-    for(let k=0;k<Math.min(kids.length,8);k++){
+    for(let k=0;k<Math.min(kids.length,3);k++){
       pulses.push({from:i,to:kids[k],t:Math.random()*0.4});
     }
-    // collegamenti tra leader
     pulses.push({from:i,to:(i+1)%12,t:Math.random()*0.3});
     pulses.push({from:i,to:(i+3)%12,t:Math.random()*0.5});
   }
-  // alcuni impulsi random sulla rete
-  for(let p=0;p<40;p++){
+  for(let p=0;p<12;p++){
     const e=EDGE[(Math.random()*Math.min(EDGE.length,2000))|0];
     if(e) pulses.push({from:e[0],to:e[1],t:Math.random()});
   }
@@ -101,7 +96,6 @@ function dimNetwork(){
   pulses.length=0;
 }
 
-// API globale per wb-app
 window.WBNet={
   allMode:false,
   running:false,
@@ -147,7 +141,6 @@ function draw(){
   gr.addColorStop(0,'rgba(180,230,245,.85)');gr.addColorStop(.5,'rgba(77,180,210,.35)');gr.addColorStop(1,'rgba(77,180,210,0)');
   x.globalAlpha=1;x.fillStyle=gr;x.beginPath();x.arc(cx,cy,R*.14*pu,0,6.283);x.fill();
 
-  // Rete attiva: tutte le linee se allMode
   const fullNet=allMode&&(running||nodes.some(n=>n.act>.08));
   const edgeLimit=fullNet?EDGE.length:Math.min(EDGE.length,2800);
   for(let e=0;e<edgeLimit;e++){
@@ -156,41 +149,39 @@ function draw(){
     if(!(fullNet||strength>.04))continue;
     const A=P[a],B=P[b];if(!A||!B)continue;
     if(fullNet){
-      x.globalAlpha=.14+strength*.42;
-      x.strokeStyle=strength>.35?'#ffb347':'#4de1ff';
-      x.lineWidth=.7+strength*1.5;
+      // linee sottili, niente neon
+      x.globalAlpha=.06+strength*.12;
+      x.strokeStyle=strength>.4?'rgba(200,160,90,.55)':'rgba(80,160,180,.45)';
+      x.lineWidth=.35+strength*.35;
     }else{
-      x.globalAlpha=.3+strength*.5;
-      x.strokeStyle='#e8a040';
-      x.lineWidth=1+strength*1.5;
+      x.globalAlpha=.22+strength*.35;
+      x.strokeStyle='rgba(200,150,70,.7)';
+      x.lineWidth=.6+strength*.8;
     }
     x.beginPath();x.moveTo(A[0],A[1]);x.lineTo(B[0],B[1]);x.stroke();
   }
-  // Collegamenti tra i 12 leader
   for(let i=0;i<12;i++)for(let j=i+1;j<12;j++){
     const sa=nodes[i].act,sb=nodes[j].act;
     if(sa<.12&&sb<.12&&!fullNet)continue;
     if(!fullNet&&(sa<.12||sb<.12))continue;
     const A=P[i],B=P[j];
-    x.globalAlpha=fullNet?.28:Math.min(1,.3+Math.max(sa,sb)*.65);
-    x.strokeStyle='#ffb347';
-    x.lineWidth=fullNet?1.15:1.3+Math.max(sa,sb)*1.2;
+    x.globalAlpha=fullNet?.1:Math.min(.75,.22+Math.max(sa,sb)*.4);
+    x.strokeStyle=fullNet?'rgba(180,150,90,.5)':'rgba(200,150,70,.75)';
+    x.lineWidth=fullNet?.45:.7+Math.max(sa,sb)*.6;
     x.beginPath();x.moveTo(A[0],A[1]);x.lineTo(B[0],B[1]);x.stroke();
   }
 
   x.globalAlpha=1;
-  // Impulsi lungo le linee
   for(let i=pulses.length-1;i>=0;i--){
     const p=pulses[i];p.t+=.032;if(p.t>1){pulses.splice(i,1);continue}
     const a=p.from>=0?P[p.from]:[cx,cy],b=P[p.to];if(!a||!b)continue;
     const px=a[0]+(b[0]-a[0])*p.t,py=a[1]+(b[1]-a[1])*p.t;
-    x.strokeStyle='rgba(255,179,71,.75)';x.lineWidth=2.4;x.globalAlpha=1-p.t;
+    x.strokeStyle='rgba(180,150,90,.35)';x.lineWidth=1;x.globalAlpha=.45*(1-p.t);
     x.beginPath();x.moveTo(a[0]+(b[0]-a[0])*Math.max(0,p.t-.12),a[1]+(b[1]-a[1])*Math.max(0,p.t-.12));x.lineTo(px,py);x.stroke();
-    x.globalAlpha=1;x.fillStyle='#ffb347';x.beginPath();x.arc(px,py,3.2,0,6.283);x.fill();
+    x.globalAlpha=.5;x.fillStyle='rgba(200,160,100,.7)';x.beginPath();x.arc(px,py,1.8,0,6.283);x.fill();
   }
-  // Mantieni rete accesa in allMode+running
-  if(fullNet&&pulses.length<25){
-    for(let k=0;k<6;k++){
+  if(fullNet&&pulses.length<12){
+    for(let k=0;k<2;k++){
       const e=EDGE[(Math.random()*Math.min(EDGE.length,1500))|0];
       if(e) pulses.push({from:e[0],to:e[1],t:0});
     }
@@ -200,22 +191,22 @@ function draw(){
   ord.forEach(i=>{
     const n=nodes[i],q=P[i];
     if(allMode&&running){
-      n.act=Math.min(1,Math.max(n.act,0.4)*0.998+0.008);
-      if(n.act<.4)n.act=Math.min(1,n.act+.025);
+      n.act=Math.min(0.9,Math.max(n.act,0.3)*0.998+0.006);
+      if(n.act<.3)n.act=Math.min(0.85,n.act+.02);
     }else{
       n.act*=.986;
     }
     const g=n.act>.05;if(g)act++;
     const depth=Math.max(.22,Math.min(1,.68-q[2]*.45));
     x.globalAlpha=g?1:depth*(n.k?.72:1);
-    x.fillStyle=g?'#ffb347':'#4db8d0';
-    x.beginPath();x.arc(q[0],q[1],(n.s+(g?n.act*2.4:0))*q[3],0,6.283);x.fill();
+    x.fillStyle=g?'rgba(220,170,90,.9)':'#4db8d0';
+    x.beginPath();x.arc(q[0],q[1],(n.s+(g?n.act*1.2:0))*q[3],0,6.283);x.fill();
     if(g){
-      x.globalAlpha=.32*n.act;
-      x.beginPath();x.arc(q[0],q[1],(n.s+4+n.act*3.5)*q[3],0,6.283);x.fill();
+      x.globalAlpha=.12*n.act;
+      x.beginPath();x.arc(q[0],q[1],(n.s+2+n.act*1.5)*q[3],0,6.283);x.fill();
     }
     if(n.k===0&&W>500&&q[2]<.4){
-      x.globalAlpha=depth;x.fillStyle=g?'#ffb347':'#7aa8b8';
+      x.globalAlpha=depth;x.fillStyle=g?'rgba(220,170,90,.95)':'#7aa8b8';
       x.font='600 12px Rajdhani,sans-serif';x.textAlign='center';x.fillText(n.r,q[0],q[1]-11);
     }
   });
