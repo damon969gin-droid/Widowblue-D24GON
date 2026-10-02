@@ -19,8 +19,14 @@ binding = "ASSETS"
 # preview_id = "YOUR_PREVIEW_KV_ID"
 
 # Secrets (NON Variables plaintext):
+#   npx wrangler secret put SERPER_API_KEY      # Google SERP (consigliato)
+#   npx wrangler secret put GOOGLE_API_KEY      # Google Custom Search JSON API
+#   npx wrangler secret put GOOGLE_CSE_ID       # Search Engine ID (cx)
 #   npx wrangler secret put TAVILY_API_KEY
-#   npx wrangler secret put SERPER_API_KEY
 #   npx wrangler secret put PEPPER
-#   npx wrangler secret put PERPLEXITY_API_KEY   # optional RAG generator
+#   npx wrangler secret put PERPLEXITY_API_KEY
 #   npx wrangler secret put BRAVE_API_KEY
+#
+# Google CSE: https://programmablesearchengine.google.com/
+# API key:   https://console.cloud.google.com/apis/credentials
+# Abilita:   Custom Search API
