@@ -7,7 +7,7 @@ import { modularSearch } from './search.js';
 import { runRAG } from './rag.js';
 import { isImageRequest, generateImage } from './image.js';
 import { buildConversationContext } from './context.js';
-import { agentStats, selectAgentsForTask, getAgentCatalog } from './agents.js';
+import { agentStats, selectAgentsForTask, runAgentContributions, detectIntent, getAgentCatalog } from './agents.js';
 import { hasDB, dbHealth, listAgents, ensureAgentsSeeded, logSearch } from './db.js';
 
 const ADMIN_EMAIL = 'giorgi.daniele96@gmail.com';
@@ -43,11 +43,13 @@ async function handleApi(request, env, url) {
           contextLearning: true,
           rag: true,
           image: true,
+          multiAgent: true,
           workersAI: !!env.AI,
           kv: !!env.AUTH_KV,
           d1: hasDB(env),
           d1Health: db,
           agents: agentStats().total,
+          agentDomains: agentStats().byDomain,
           tavily: !!env.TAVILY_API_KEY,
           serper: !!env.SERPER_API_KEY,
           brave: !!env.BRAVE_API_KEY,
@@ -80,18 +82,33 @@ async function handleApi(request, env, url) {
     if (url.pathname === '/api/agents' && request.method === 'GET') {
       const role = url.searchParams.get('role') || undefined;
       const shell = url.searchParams.get('shell');
+      const domain = url.searchParams.get('domain') || undefined;
       const limit = url.searchParams.get('limit') || '50';
       const data = await listAgents(env, {
         role,
         shell: shell != null && shell !== '' ? shell : undefined,
         limit: Number(limit) || 50,
       });
+      // filter domain in-memory if needed
+      if (domain && data.agents) {
+        data.agents = data.agents.filter((a) => a.domain === domain || !a.domain);
+        if (data.source === 'memory') {
+          data.agents = getAgentCatalog()
+            .filter((a) => a.domain === domain)
+            .slice(0, Number(limit) || 50);
+        }
+      }
       return json({ ok: true, ...data }, 200, cors);
     }
     if (url.pathname === '/api/agents/stats' && request.method === 'GET') {
       const stats = agentStats();
       const db = await dbHealth(env);
-      return json({ ok: true, stats, db }, 200, cors);
+      const sample = selectAgentsForTask({ query: url.searchParams.get('q') || 'ricerca web', allMode: false });
+      return json(
+        { ok: true, stats, db, sampleIntent: sample.intent, sampleTeam: sample.agents.slice(0, 12) },
+        200,
+        cors
+      );
     }
     if (url.pathname === '/api/agents/seed' && request.method === 'POST') {
       const r = await ensureAgentsSeeded(env);
@@ -138,13 +155,17 @@ async function handleSearch(request, env, cors) {
 
   if (isImageRequest(raw)) {
     const img = await generateImage(raw, { env, lang });
+    const selection = selectAgentsForTask({ query: raw, intent: 'image', allMode: !!body.allAgents });
     return json(
       {
         ok: true,
         mode: 'image',
+        intent: 'image',
         lang,
         answer: { text: img.message, title: '', provider: img.provider },
         image: img,
+        agents: selection.agents,
+        agentsCount: selection.count,
         results: [],
         providers: [],
       },
@@ -153,14 +174,38 @@ async function handleSearch(request, env, cors) {
     );
   }
 
+  const selection = selectAgentsForTask({
+    query: ctx.query,
+    allMode: !!body.allAgents || !!body.allMode,
+  });
+  const pipeline = runAgentContributions(ctx.query, selection, { deep });
+
   if (useRag) {
-    const data = await runRAG(ctx.query, { deep, env, lang, history, context: ctx });
+    const data = await runRAG(ctx.query, {
+      deep: deep || pipeline.boosts.preferDeep,
+      env,
+      lang,
+      history,
+      context: ctx,
+      intent: selection.intent,
+      agentPipeline: pipeline,
+    });
     data.resolvedQuery = ctx.query;
     data.followUp = ctx.followUp;
     data.contextEntity = ctx.entity;
     data.contextTopic = ctx.topic;
     data.contextDomain = ctx.domain;
     data.lang = lang;
+    data.intent = selection.intent;
+    data.agents = selection.agents;
+    data.agentsCount = selection.count;
+    data.agentPipeline = {
+      intent: pipeline.intent,
+      domains: pipeline.domains,
+      agentCount: pipeline.agentCount,
+      boosts: pipeline.boosts,
+      contributions: body.debugAgents ? pipeline.contributions : pipeline.contributions.slice(0, 8),
+    };
     return json(data, 200, cors);
   }
 
@@ -169,6 +214,9 @@ async function handleSearch(request, env, cors) {
   data.followUp = ctx.followUp;
   data.contextEntity = ctx.entity;
   data.lang = lang;
+  data.intent = selection.intent;
+  data.agents = selection.agents;
+  data.agentsCount = selection.count;
   return json(data, 200, cors);
 }
 
@@ -180,13 +228,24 @@ async function handleRAG(request, env, cors) {
   if (!raw) return json({ error: 'empty_query' }, 400, cors);
   const ctx = buildConversationContext(raw, history);
   const lang = resolveLang(body, raw);
+  const selection = selectAgentsForTask({ query: ctx.query, allMode: !!body.allAgents });
+  const pipeline = runAgentContributions(ctx.query, selection, { deep });
   await logSpider(env, 'rag_query', null, request);
-  const data = await runRAG(ctx.query, { deep, env, lang, history, context: ctx });
+  const data = await runRAG(ctx.query, {
+    deep: deep || pipeline.boosts.preferDeep,
+    env,
+    lang,
+    history,
+    context: ctx,
+    intent: selection.intent,
+  });
   data.resolvedQuery = ctx.query;
   data.followUp = ctx.followUp;
   data.contextEntity = ctx.entity;
   data.contextTopic = ctx.topic;
   data.contextDomain = ctx.domain;
+  data.intent = selection.intent;
+  data.agentsCount = selection.count;
   return json(data, 200, cors);
 }
 
@@ -197,7 +256,8 @@ async function handleImage(request, env, cors) {
   const lang = resolveLang(body, prompt);
   await logSpider(env, 'image_gen', null, request);
   const img = await generateImage(prompt, { env, lang });
-  return json(img, 200, cors);
+  const selection = selectAgentsForTask({ query: prompt, intent: 'image' });
+  return json({ ...img, intent: 'image', agents: selection.agents, agentsCount: selection.count }, 200, cors);
 }
 
 async function handleOrchestrate(request, env, cors) {
@@ -214,11 +274,14 @@ async function handleOrchestrate(request, env, cors) {
 
   if (isImageRequest(prompt)) {
     const img = await generateImage(prompt, { env, lang });
+    const selection = selectAgentsForTask({ query: prompt, intent: 'image', allMode: !!body.allAgents });
     return json(
       {
         ok: true,
         intent: 'image',
         image: img,
+        agents: selection.agents,
+        agentsCount: selection.count,
         search: {
           ok: true,
           mode: 'image',
@@ -260,16 +323,21 @@ async function handleOrchestrate(request, env, cors) {
   }
 
   const allMode = !!body.allAgents || !!body.allMode;
-  const agentsSelected = selectAgentsForTask({ query: ctx.query || prompt, allMode });
+  const selection = selectAgentsForTask({ query: ctx.query || prompt, allMode });
+  const pipeline = runAgentContributions(ctx.query || prompt, selection, { deep });
   const plan = buildPlan(prompt, attachments, deep, search);
-  plan.agents = agentsSelected.map((a) => ({ id: a.id, name: a.name, role: a.role, shell: a.shell }));
+  plan.agents = selection.agents;
+  plan.intent = selection.intent;
+  plan.domains = selection.domains;
 
   return json(
     {
       ok: true,
       plan,
-      agents: plan.agents,
-      agentsCount: agentsSelected.length,
+      intent: selection.intent,
+      agents: selection.agents,
+      agentsCount: selection.count,
+      agentPipeline: pipeline,
       search,
       conversation: {
         followUp: ctx.followUp,
@@ -313,7 +381,7 @@ function buildPlan(prompt, attachments, deep, search) {
     prompt,
     attachments: attachments.map((a) => (typeof a === 'string' ? a : a.name || 'file')),
     stack,
-    steps: ['Retrieve', 'Rank', 'Augment', 'Generate'],
+    steps: ['Intent', 'Route agents', 'Retrieve', 'Rank', 'Augment', 'Generate'],
     sources,
     providersUsed: search ? search.providers : [],
     policy: search ? search.policy : null,
