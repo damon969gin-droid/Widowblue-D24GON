@@ -1,6 +1,6 @@
 /**
  * WidowBlue – ricerca web modulare multi-provider
- * Priorità risposte: Tavily / Serper (web live) → Wikipedia → DDG
+ * Priorità: Google CSE + Serper (Google SERP) → Tavily → Wikipedia → DDG
  * Lingua: preferisce Wikipedia + Serper nella lingua utente
  */
 
@@ -48,11 +48,13 @@ function scoreResult(r, qTokens) {
   if (title.length < 45) score += 4;
   if (r.kind === 'summary') score += 20;
   if (r.provider === 'tavily') score += r.kind === 'summary' ? 50 : 25;
-  if (r.provider === 'serper') score += r.kind === 'summary' ? 45 : 22;
+  if (r.provider === 'serper') score += r.kind === 'summary' ? 52 : 28;
+  if (r.provider === 'google') score += r.kind === 'summary' ? 55 : 30;
   if (r.provider === 'perplexity') score += r.kind === 'summary' ? 40 : 15;
-  if (r.provider === 'brave' || r.provider === 'google' || r.provider === 'bing') score += 12;
+  if (r.provider === 'brave' || r.provider === 'bing') score += 12;
   if (/disambigua|disambiguation/i.test(title + sn)) score -= 25;
-  if (/procaccini|pittore|painter|atalanta|calcio|football/i.test(title + sn)) score -= 10;
+  if (/procaccini|pittore|painter/i.test(title + sn)) score -= 10;
+  if (/classifica|serie a|capolista|standings/i.test(title + sn)) score += 14;
   return score;
 }
 
@@ -61,7 +63,7 @@ function focusAnswer(query, text, title) {
   const t = String(text || '');
   const name = String(title || '')
     .replace(/\s*\([A-Z]{2}\)\s*$/i, '')
-    .replace(/^Sintesi\s+(Tavily|Perplexity|Serper).*$/i, '')
+    .replace(/^Sintesi\s+(Tavily|Perplexity|Serper|Google).*$/i, '')
     .trim();
 
   if (/nato|nascita|\bborn\b|when was|data di nascita/i.test(ql)) {
@@ -102,6 +104,22 @@ function focusAnswer(query, text, title) {
 }
 
 function pickBestAnswer(unique, q) {
+  // Prefer Google / Serper (ricerca Google normale)
+  const googleLike = unique.find(
+    (r) =>
+      (r.provider === 'google' || r.provider === 'serper') &&
+      r.kind === 'summary' &&
+      r.snippet &&
+      r.snippet.length > 20
+  );
+  if (googleLike) {
+    return {
+      text: focusAnswer(q, googleLike.snippet, googleLike.title),
+      title: googleLike.title,
+      url: googleLike.url,
+      provider: googleLike.provider,
+    };
+  }
   const webSummary = unique.find(
     (r) => WEB_PROVIDERS.has(r.provider) && r.kind === 'summary' && r.snippet && r.snippet.length > 20
   );
@@ -111,6 +129,17 @@ function pickBestAnswer(unique, q) {
       title: webSummary.title,
       url: webSummary.url,
       provider: webSummary.provider,
+    };
+  }
+  const googleHit = unique.find(
+    (r) => (r.provider === 'google' || r.provider === 'serper') && r.snippet && r.snippet.length > 40
+  );
+  if (googleHit) {
+    return {
+      text: focusAnswer(q, googleHit.snippet, googleHit.title),
+      title: googleHit.title,
+      url: googleHit.url,
+      provider: googleHit.provider,
     };
   }
   const webHit = unique.find((r) => WEB_PROVIDERS.has(r.provider) && r.snippet && r.snippet.length > 40);
@@ -156,24 +185,24 @@ export async function modularSearch(query, opts = {}) {
   const results = [];
   const errors = [];
 
-  const jobs = [
-    runProvider('wikipedia', () => searchWikipedia(q, qNorm, qTokens, lang)),
-    runProvider('duckduckgo', () => searchDuckDuckGo(qNorm || q)),
-  ];
+  // Google-first: CSE + Serper (Google SERP) prioritari
+  const jobs = [];
 
-  if (env.TAVILY_API_KEY) {
-    jobs.push(runProvider('tavily', () => searchTavily(q, env.TAVILY_API_KEY, deep)));
+  if (env.GOOGLE_API_KEY && env.GOOGLE_CSE_ID) {
+    jobs.push(
+      runProvider('google', () => searchGoogle(q, env.GOOGLE_API_KEY, env.GOOGLE_CSE_ID, deep ? 10 : 8))
+    );
   }
   if (env.SERPER_API_KEY) {
     jobs.push(runProvider('serper', () => searchSerper(q, env.SERPER_API_KEY, deep ? 10 : 8, lang)));
   }
+  if (env.TAVILY_API_KEY) {
+    jobs.push(runProvider('tavily', () => searchTavily(q, env.TAVILY_API_KEY, deep)));
+  }
+  jobs.push(runProvider('wikipedia', () => searchWikipedia(q, qNorm, qTokens, lang)));
+  jobs.push(runProvider('duckduckgo', () => searchDuckDuckGo(qNorm || q)));
   if (env.BRAVE_API_KEY) {
     jobs.push(runProvider('brave', () => searchBrave(q, env.BRAVE_API_KEY, deep ? 10 : 5)));
-  }
-  if (env.GOOGLE_API_KEY && env.GOOGLE_CSE_ID) {
-    jobs.push(
-      runProvider('google', () => searchGoogle(q, env.GOOGLE_API_KEY, env.GOOGLE_CSE_ID, deep ? 10 : 5))
-    );
   }
   if (env.BING_API_KEY) {
     jobs.push(runProvider('bing', () => searchBing(q, env.BING_API_KEY, deep ? 10 : 5, lang)));
@@ -217,7 +246,11 @@ export async function modularSearch(query, opts = {}) {
     results: unique.map(({ _score, ...rest }) => rest),
     policy: {
       respectful: true,
-      notes: ['Lingua preferita: ' + lang, 'Tavily/Serper se configurati', 'Wikipedia prioritaria nella lingua utente'],
+      notes: [
+        'Priorità Google CSE / Serper (SERP Google)',
+        'Lingua: ' + lang,
+        'Poi Tavily, Wikipedia, DDG',
+      ],
     },
     fetchedAt: Date.now(),
   };
@@ -462,6 +495,7 @@ async function searchSerper(q, apiKey, num = 5, lang = 'it') {
       num: Math.min(Math.max(1, num), 10),
       gl: lang || 'it',
       hl: lang || 'it',
+      autocorrect: true,
     }),
   });
   if (!res.ok) {
@@ -474,7 +508,7 @@ async function searchSerper(q, apiKey, num = 5, lang = 'it') {
     out.push({
       provider: 'serper',
       kind: 'summary',
-      title: data.answerBox.title || 'Answer Box',
+      title: data.answerBox.title || 'Google Answer',
       url: data.answerBox.link || '',
       snippet: data.answerBox.answer || data.answerBox.snippet || '',
       fetchedAt: Date.now(),
@@ -556,7 +590,8 @@ async function searchGoogle(q, apiKey, cx, num = 5) {
 
 async function searchBing(q, apiKey, count = 5, lang = 'it') {
   const n = Math.min(Math.max(1, count), 50);
-  const mkt = lang === 'en' ? 'en-US' : lang === 'de' ? 'de-DE' : lang === 'es' ? 'es-ES' : lang === 'fr' ? 'fr-FR' : 'it-IT';
+  const mkt =
+    lang === 'en' ? 'en-US' : lang === 'de' ? 'de-DE' : lang === 'es' ? 'es-ES' : lang === 'fr' ? 'fr-FR' : 'it-IT';
   const url =
     'https://api.bing.microsoft.com/v7.0/search?q=' +
     encodeURIComponent(q) +
@@ -589,16 +624,11 @@ async function searchBing(q, apiKey, count = 5, lang = 'it') {
 
 async function searchPerplexity(q, apiKey, deep, lang = 'it') {
   const model = deep ? 'sonar-pro' : 'sonar';
-  const langName =
-    { it: 'Italian', en: 'English', es: 'Spanish', fr: 'French', de: 'German', pt: 'Portuguese' }[lang] ||
-    'Italian';
   const res = await fetch('https://api.perplexity.ai/chat/completions', {
     method: 'POST',
     headers: {
       Authorization: 'Bearer ' + apiKey,
       'Content-Type': 'application/json',
-      Accept: 'application/json',
-      'User-Agent': UA,
     },
     body: JSON.stringify({
       model,
@@ -606,56 +636,30 @@ async function searchPerplexity(q, apiKey, deep, lang = 'it') {
         {
           role: 'system',
           content:
-            'You are a research assistant. Reply briefly in ' +
-            langName +
-            '. Give precise facts. Prefer reliable sources.',
+            lang === 'it'
+              ? 'Rispondi in italiano in modo preciso e breve.'
+              : 'Reply precisely and briefly in ' + lang + '.',
         },
         { role: 'user', content: q },
       ],
       temperature: 0.2,
-      max_tokens: deep ? 800 : 400,
-      return_related_questions: false,
+      max_tokens: 500,
     }),
   });
-  if (!res.ok) {
-    const errBody = await res.text().catch(() => '');
-    throw new Error('perplexity HTTP ' + res.status + (errBody ? ': ' + errBody.slice(0, 160) : ''));
-  }
+  if (!res.ok) throw new Error('perplexity HTTP ' + res.status);
   const data = await res.json();
-  const content =
-    (data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content) || '';
-  const out = [];
-  const cites = data.citations || data.search_results || [];
-  if (Array.isArray(cites)) {
-    for (const c of cites.slice(0, deep ? 8 : 5)) {
-      if (typeof c === 'string') {
-        out.push({
-          provider: 'perplexity',
-          title: c.replace(/^https?:\/\//, '').slice(0, 80),
-          url: c,
-          snippet: content.slice(0, 200),
-          fetchedAt: Date.now(),
-        });
-      } else if (c && (c.url || c.link)) {
-        out.push({
-          provider: 'perplexity',
-          title: c.title || c.name || (c.url || c.link),
-          url: c.url || c.link,
-          snippet: c.snippet || content.slice(0, 200),
-          fetchedAt: Date.now(),
-        });
-      }
-    }
-  }
-  if (content) {
-    out.unshift({
+  const text =
+    (data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content) ||
+    '';
+  if (!text) return [];
+  return [
+    {
       provider: 'perplexity',
       kind: 'summary',
       title: 'Sintesi Perplexity',
       url: 'https://www.perplexity.ai/',
-      snippet: content.slice(0, 700),
+      snippet: String(text).slice(0, 900),
       fetchedAt: Date.now(),
-    });
-  }
-  return out;
+    },
+  ];
 }
