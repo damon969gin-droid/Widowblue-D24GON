@@ -42,9 +42,7 @@ function say(role,txt,cls){
   while(logEl.children.length>80)logEl.removeChild(logEl.firstChild);
 }
 
-function esc(s){
-  return String(s||'').replace(/&/g,'&').replace(/</g,'<').replace(/>/g,'>').replace(/"/g,'"');
-}
+function esc(s){return String(s||'').replace(/&/g,'&').replace(/</g,'<').replace(/>/g,'>').replace(/"/g,'"');}
 
 function linkHtml(url,label){
   if(!url||!/^https?:\/\//i.test(url)) return esc(label||url||'');
@@ -194,14 +192,15 @@ try{allAgents=localStorage.getItem('wb_all_agents')==='1'}catch(e){}
 
 function applyAllAgentsVisual(on){
   window.allMode=!!on;
-  window.running=!!on;
   if(window.WBNet&&typeof window.WBNet.setAllMode==='function'){
     window.WBNet.setAllMode(!!on);
   }else if(window.WBNet){
     window.WBNet.allMode=!!on;
-    window.WBNet.running=!!on;
-    if(on&&window.WBNet.ignite)window.WBNet.ignite();
-    if(!on&&window.WBNet.dim)window.WBNet.dim();
+    window.allMode=!!on;
+    if(!on){
+      window.running=false;
+      if(window.WBNet.dim)window.WBNet.dim();
+    }
   }
 }
 if(allAgentsBtn){
@@ -321,17 +320,12 @@ async function sendQuery(){
   userDiv.textContent=text||'(allegati)';
   if(atts.length){const ad=document.createElement('div');ad.className='atts';ad.textContent=atts.map(a=>a.name).join(', ');userDiv.appendChild(ad)}
   if(logEl){logEl.appendChild(userDiv);updateLogTouchMode();scrollLog()}
-  if(allAgents)applyAllAgentsVisual(true);
-  else if(window.WBNet&&window.WBNet.ignite){
+  // Impulsi rete = durata ragionamento (API)
+  if(window.WBNet&&window.WBNet.setRunning){
+    window.WBNet.setRunning(true);
+  }else if(window.WBNet&&window.WBNet.ignite){
     window.running=true;
-    if(window.WBNet.setRunning)window.WBNet.setRunning(true);
     window.WBNet.ignite();
-    setTimeout(()=>{
-      if(!allAgents&&window.WBNet){
-        if(window.WBNet.setRunning)window.WBNet.setRunning(false);
-        window.running=false;
-      }
-    },4500);
   }
   threadMessages.push({role:'user',text:text,at:Date.now()});
   pushMemory('user',text);
@@ -377,6 +371,11 @@ async function sendQuery(){
     }
   }catch(err){
     appendReply({plain:'Errore di rete. Riprova.',html:null});
+  }
+  if(window.WBNet&&window.WBNet.setRunning){
+    window.WBNet.setRunning(false);
+  }else{
+    window.running=false;
   }
   appBusy=false;
   if(goBtn)goBtn.disabled=false;
