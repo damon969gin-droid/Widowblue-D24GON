@@ -5,7 +5,7 @@
 import { modularSearch } from './search.js';
 import { filterResultsByContext } from './context.js';
 import { synthesizeAnswer, expandForIntent, polish } from './answer.js';
-import { langName, noAnswerMsg } from './lang.js';
+import { langName, noAnswerMsg, detectLang, translateText } from './lang.js';
 
 const MAX_CHUNKS_STD = 8;
 const MAX_CHUNKS_DEEP = 16;
@@ -71,7 +71,16 @@ export async function runRAG(query, opts = {}) {
     }, [])
     .slice(0, deep ? 10 : 6);
 
-  const cleanText = polish(generation.text, lang);
+  let cleanText = polish(generation.text, lang);
+  try {
+    const detected = detectLang(cleanText);
+    if (lang && lang !== 'auto' && detected !== lang && cleanText.length > 40) {
+      const tr = await translateText(cleanText.slice(0, 450), detected, lang);
+      if (tr && tr.length > 30 && detectLang(tr) === lang) {
+        cleanText = polish(tr + (cleanText.length > 450 ? '' : ''), lang);
+      }
+    }
+  } catch (_) {}
 
   return {
     ok: true,
@@ -280,11 +289,9 @@ async function groundedGenerate(query, context, cited, opts) {
     'Rispondi ESCLUSIVAMENTE in ' +
     langLabel +
     '. ' +
-    'Prima ragiona internamente in passi (chain of thought), poi scrivi SOLO la risposta finale: naturale, completa e approfondita (3-8 frasi se serve). ' +
+    'Scrivi SOLO la risposta finale in linguaggio naturale, pertinente alla domanda (3-8 frasi se serve). ' +
     'Usa i fatti del contesto; non inventare. Se non sei sicuro, dillo. ' +
-    'Filtra contenuti inappropriati o pericolosi. ' +
-    'Non mischiare lingue. Non citare pipeline, provider o "sources" nel testo. ' +
-    'Non mostrare i passi del ragionamento interno. ' +
+    'Filtra contenuti inappropriati. Non mischiare lingue. Non citare pipeline o provider. ' +
     topicHint +
     ' Lingua obbligatoria: ' +
     langLabel +
@@ -301,75 +308,36 @@ async function groundedGenerate(query, context, cited, opts) {
           system + ' Improve only if needed, stay in ' + langLabel + ': ' + synth
         );
         if (refined && refined.length > 15) {
-          return {
-            text: polish(refined, lang),
-            provider: 'workers-ai',
-            title: '',
-            citations: cited.map((c) => c.id),
-          };
+          return { text: polish(refined, lang), provider: 'workers-ai', title: '', citations: cited.map((c) => c.id) };
         }
       } catch (e) {}
     }
-    return {
-      text: polish(synth, lang),
-      provider: 'synth',
-      title: '',
-      citations: cited.map((c) => c.id),
-    };
+    return { text: polish(synth, lang), provider: 'synth', title: '', citations: cited.map((c) => c.id) };
   }
 
   if (env.AI && context.length > 40) {
     try {
       const text = await generateWithWorkersAI(env.AI, query, context, system);
-      if (text) {
-        return {
-          text: polish(text, lang),
-          provider: 'workers-ai',
-          title: '',
-          citations: cited.map((c) => c.id),
-        };
-      }
+      if (text) return { text: polish(text, lang), provider: 'workers-ai', title: '', citations: cited.map((c) => c.id) };
     } catch (e) {}
   }
 
   if (env.PERPLEXITY_API_KEY && context.length > 40) {
     try {
       const text = await generateWithPerplexity(env.PERPLEXITY_API_KEY, query, context, system);
-      if (text) {
-        return {
-          text: polish(text, lang),
-          provider: 'perplexity',
-          title: '',
-          citations: cited.map((c) => c.id),
-        };
-      }
+      if (text) return { text: polish(text, lang), provider: 'perplexity', title: '', citations: cited.map((c) => c.id) };
     } catch (e) {}
   }
 
   if (opts.priorAnswer && opts.priorAnswer.text) {
-    return {
-      text: polish(opts.priorAnswer.text, lang),
-      provider: 'retrieve',
-      title: '',
-      citations: cited.slice(0, 3).map((c) => c.id),
-    };
+    return { text: polish(opts.priorAnswer.text, lang), provider: 'retrieve', title: '', citations: cited.slice(0, 3).map((c) => c.id) };
   }
 
-  return {
-    text: noAnswerMsg(lang),
-    provider: 'empty',
-    title: '',
-    citations: [],
-  };
+  return { text: noAnswerMsg(lang), provider: 'empty', title: '', citations: [] };
 }
 
 async function generateWithWorkersAI(AI, query, context, system) {
-  const user =
-    'User question: ' +
-    query +
-    '\n\nSources:\n' +
-    context +
-    '\n\nAnswer directly in the required language:';
+  const user = 'User question: ' + query + '\n\nSources:\n' + context + '\n\nAnswer directly in the required language:';
   const res = await AI.run('@cf/meta/llama-3.1-8b-instruct', {
     messages: [
       { role: 'system', content: system },
@@ -378,26 +346,19 @@ async function generateWithWorkersAI(AI, query, context, system) {
     max_tokens: 900,
     temperature: 0.2,
   });
-  const text =
-    (res && (res.response || res.result || res.text)) || (typeof res === 'string' ? res : '');
+  const text = (res && (res.response || res.result || res.text)) || (typeof res === 'string' ? res : '');
   return String(text || '').trim().slice(0, 2200);
 }
 
 async function generateWithPerplexity(apiKey, query, context, system) {
   const res = await fetch('https://api.perplexity.ai/chat/completions', {
     method: 'POST',
-    headers: {
-      Authorization: 'Bearer ' + apiKey,
-      'Content-Type': 'application/json',
-    },
+    headers: { Authorization: 'Bearer ' + apiKey, 'Content-Type': 'application/json' },
     body: JSON.stringify({
       model: 'sonar',
       messages: [
         { role: 'system', content: system },
-        {
-          role: 'user',
-          content: 'User question: ' + query + '\n\nSources:\n' + context + '\n\nDirect answer:',
-        },
+        { role: 'user', content: 'User question: ' + query + '\n\nSources:\n' + context + '\n\nDirect answer:' },
       ],
       temperature: 0.15,
       max_tokens: 900,
@@ -405,10 +366,7 @@ async function generateWithPerplexity(apiKey, query, context, system) {
   });
   if (!res.ok) throw new Error('perplexity ' + res.status);
   const data = await res.json();
-  return (
-    (data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content) ||
-    ''
-  )
+  return ((data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content) || '')
     .trim()
     .slice(0, 2200);
 }
