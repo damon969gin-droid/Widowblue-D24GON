@@ -1,4 +1,4 @@
-/* WidowBlue API client – auth, search, orchestrate + history + lang */
+/* WidowBlue API client – auth, search, orchestrate, image + lang */
 (function () {
   const API = '';
 
@@ -34,6 +34,12 @@
           history: history || [],
           lang: lang || 'auto',
         }),
+      }),
+
+    image: (prompt, lang) =>
+      api('/api/image', {
+        method: 'POST',
+        body: JSON.stringify({ prompt, lang: lang || 'auto' }),
       }),
 
     orchestrate: (prompt, opts) =>
