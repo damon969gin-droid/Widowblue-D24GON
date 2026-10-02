@@ -237,7 +237,6 @@ function rankChunks(query, chunks) {
     if (c.kind === 'summary') score *= 1.4;
     if (c.provider === 'tavily' || c.provider === 'serper') score *= 1.25;
     if (c.provider === 'wikipedia') score *= 1.15;
-    // Boost live standings pages
     if (/classifica|standings|live/i.test((c.title || '') + (c.text || ''))) score *= 1.3;
     return { ...c, score };
   });
@@ -278,26 +277,23 @@ async function groundedGenerate(query, context, cited, opts) {
       '. Non cambiare argomento.';
   }
 
-  // Claude-like: risposta diretta, naturale, solo lingua richiesta
   const system =
-    'Sei un assistente di ricerca preciso e chiaro, come Claude. ' +
+    'Sei un assistente di ricerca esperto, chiaro e affidabile. ' +
     'Rispondi ESCLUSIVAMENTE in ' +
     langName +
     '. ' +
-    'Dai subito la risposta alla domanda, in 1-4 frasi naturali. ' +
-    'Usa solo i fatti del contesto. Non inventare. ' +
-    'Non mischiare lingue. Non citare fonti nel testo (i link stanno a parte). ' +
-    'Non dire "secondo le sources", "the sources", "partial standings". ' +
-    'Non ripetere nomi di squadre due volte. ' +
+    'Prima ragiona internamente in passi (chain of thought), poi scrivi SOLO la risposta finale: naturale, completa e approfondita (3-8 frasi se serve). ' +
+    'Usa i fatti del contesto; non inventare. Se non sei sicuro, dillo. ' +
+    'Filtra contenuti inappropriati o pericolosi. ' +
+    'Non mischiare lingue. Non citare pipeline, provider o "sources" nel testo. ' +
+    'Non mostrare i passi del ragionamento interno. ' +
     topicHint +
-    ' Se i dati non bastano, dillo in ' +
+    ' Lingua obbligatoria: ' +
     langName +
-    ' in modo semplice.';
+    '.';
 
-  // Prefer synthesizer for factual/sports (no English leakage)
   const synth = synthesizeAnswer(query, cited, opts.priorAnswer, lang);
   if (synth && synth.length > 20) {
-    // If Workers AI available, can refine synth further
     if (env.AI && context.length > 40) {
       try {
         const refined = await generateWithWorkersAI(
@@ -384,12 +380,12 @@ async function generateWithWorkersAI(AI, query, context, system) {
       { role: 'system', content: system },
       { role: 'user', content: user },
     ],
-    max_tokens: 500,
+    max_tokens: 900,
     temperature: 0.2,
   });
   const text =
     (res && (res.response || res.result || res.text)) || (typeof res === 'string' ? res : '');
-  return String(text || '').trim().slice(0, 1200);
+  return String(text || '').trim().slice(0, 2200);
 }
 
 async function generateWithPerplexity(apiKey, query, context, system) {
@@ -409,7 +405,7 @@ async function generateWithPerplexity(apiKey, query, context, system) {
         },
       ],
       temperature: 0.15,
-      max_tokens: 500,
+      max_tokens: 900,
     }),
   });
   if (!res.ok) throw new Error('perplexity ' + res.status);
@@ -419,5 +415,5 @@ async function generateWithPerplexity(apiKey, query, context, system) {
     ''
   )
     .trim()
-    .slice(0, 1200);
+    .slice(0, 2200);
 }
