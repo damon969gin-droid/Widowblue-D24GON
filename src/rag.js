@@ -1,11 +1,11 @@
 /**
- * WidowBlue – RAG: Deep Search + Grounded Generation
- * Answers are user-facing: analyze sources, reason, reply. No system meta.
- * Conversation context filters off-topic results (Serie A ≠ F1).
+ * WidowBlue – RAG + sintesi stile assistente
+ * Risposte dirette, lingua utente, no meta di sistema.
  */
 
 import { modularSearch } from './search.js';
 import { filterResultsByContext } from './context.js';
+import { synthesizeAnswer, expandForIntent, polish } from './answer.js';
 
 const MAX_CHUNKS_STD = 8;
 const MAX_CHUNKS_DEEP = 16;
@@ -71,7 +71,7 @@ export async function runRAG(query, opts = {}) {
     }, [])
     .slice(0, deep ? 10 : 6);
 
-  const cleanText = sanitizeUserText(generation.text);
+  const cleanText = polish(generation.text, lang);
 
   return {
     ok: true,
@@ -108,29 +108,23 @@ export async function runRAG(query, opts = {}) {
   };
 }
 
-function sanitizeUserText(text) {
-  let t = String(text || '').trim();
-  t = t.replace(/\b(extractive[- ]?grounded|workers-ai-grounded|perplexity-grounded|deep-rag|grounded-empty)\b/gi, '');
-  t = t.replace(/\b(RAG|Grounded\s*·[^\n]*|pipeline|provider|generator)\b/gi, '');
-  t = t.replace(/\[\d+\]/g, '');
-  t = t.replace(/\s{2,}/g, ' ').trim();
-  return t.slice(0, 1400);
-}
-
 async function deepRetrieve(q, { deep, env, lang }) {
   const queries = [q];
+  for (const v of expandForIntent(q, lang)) {
+    if (!queries.includes(v) && v.length > 3) queries.push(v);
+  }
   if (deep) {
     for (const v of expandQueries(q, lang)) {
       if (!queries.includes(v) && v.length > 3) queries.push(v);
     }
   }
 
-  const primary = await modularSearch(q, { deep, env, lang });
+  const primary = await modularSearch(q, { deep: true, env, lang });
   const docs = [...(primary.results || [])];
   const seen = new Set(docs.map((d) => (d.url || d.title || '').toLowerCase()).filter(Boolean));
 
-  if (deep && queries.length > 1) {
-    const extras = queries.slice(1, 3);
+  const extras = queries.slice(1, 3);
+  if (extras.length) {
     const more = await Promise.all(
       extras.map((qq) => modularSearch(qq, { deep: true, env, lang }).catch(() => null))
     );
@@ -145,22 +139,6 @@ async function deepRetrieve(q, { deep, env, lang }) {
     }
   }
 
-  if (deep && docs.length < 4) {
-    const hop = extractHopTerms(q, docs);
-    if (hop) {
-      const hopRes = await modularSearch(hop, { deep: true, env, lang }).catch(() => null);
-      if (hopRes && hopRes.results) {
-        for (const r of hopRes.results) {
-          const k = (r.url || r.title || '').toLowerCase();
-          if (!k || seen.has(k)) continue;
-          seen.add(k);
-          docs.push(r);
-        }
-        if (!queries.includes(hop)) queries.push(hop);
-      }
-    }
-  }
-
   return { docs, primary, queries };
 }
 
@@ -168,30 +146,13 @@ function expandQueries(q, lang) {
   const base = q.replace(/\?+$/, '').trim();
   const out = [];
   if (lang === 'it') {
-    out.push(base + ' wikipedia');
-    out.push(base + ' fatti');
+    out.push(base + ' oggi');
     if (/quando|nato|nascita/i.test(base)) out.push(base.replace(/quando\s+/i, '') + ' data di nascita');
     if (/chi è|chi e/i.test(base)) out.push(base.replace(/chi\s+[eè]\s+/i, '') + ' biografia');
-    if (/cos[a']?\s*[eè]/i.test(base)) out.push(base + ' definizione');
   } else {
-    out.push(base + ' facts');
-    out.push(base + ' overview');
-    if (/when|born/i.test(base)) out.push(base + ' date of birth');
-    if (/who is/i.test(base)) out.push(base + ' biography');
+    out.push(base + ' today');
   }
-  return out.slice(0, 3);
-}
-
-function extractHopTerms(q, docs) {
-  const title = docs[0] && docs[0].title;
-  if (!title) return null;
-  const clean = String(title)
-    .replace(/\s*\([A-Z]{2}\)\s*$/i, '')
-    .replace(/^Sintesi\s+\w+/i, '')
-    .trim();
-  if (clean.length < 4 || clean.length > 80) return null;
-  if (q.toLowerCase().includes(clean.toLowerCase().slice(0, 12))) return null;
-  return clean;
+  return out.slice(0, 2);
 }
 
 function tokenize(s) {
@@ -276,7 +237,8 @@ function rankChunks(query, chunks) {
     if (c.kind === 'summary') score *= 1.4;
     if (c.provider === 'tavily' || c.provider === 'serper') score *= 1.25;
     if (c.provider === 'wikipedia') score *= 1.15;
-    if (c.provider === 'perplexity') score *= 1.2;
+    // Boost live standings pages
+    if (/classifica|standings|live/i.test((c.title || '') + (c.text || ''))) score *= 1.3;
     return { ...c, score };
   });
 
@@ -311,29 +273,64 @@ async function groundedGenerate(query, context, cited, opts) {
   let topicHint = '';
   if (opts.topic || opts.entity) {
     topicHint =
-      ' Resta sul tema della conversazione: ' +
+      ' Tema conversazione: ' +
       [opts.entity, opts.topic].filter(Boolean).join(' / ') +
-      '. Non cambiare argomento (es. se si parla di Serie A non parlare di Formula 1).';
+      '. Non cambiare argomento.';
   }
+
+  // Claude-like: risposta diretta, naturale, solo lingua richiesta
   const system =
-    'Sei WidowBlue, assistente di ricerca. Rispondi SOLO in ' +
+    'Sei un assistente di ricerca preciso e chiaro, come Claude. ' +
+    'Rispondi ESCLUSIVAMENTE in ' +
     langName +
     '. ' +
-    'Analizza il contesto, ragiona e dai la risposta più chiara e utile alla domanda. ' +
-    'Usa SOLO fatti presenti nel contesto. Non inventare. ' +
-    'Non menzionare sistemi, pipeline, RAG, provider, API o dettagli tecnici. ' +
+    'Dai subito la risposta alla domanda, in 1-4 frasi naturali. ' +
+    'Usa solo i fatti del contesto. Non inventare. ' +
+    'Non mischiare lingue. Non citare fonti nel testo (i link stanno a parte). ' +
+    'Non dire "secondo le sources", "the sources", "partial standings". ' +
+    'Non ripetere nomi di squadre due volte. ' +
     topicHint +
-    ' Scrivi in prosa naturale, max ' +
-    (opts.deep ? '8' : '5') +
-    ' frasi. Se il contesto non basta, dillo in modo semplice.';
+    ' Se i dati non bastano, dillo in ' +
+    langName +
+    ' in modo semplice.';
+
+  // Prefer synthesizer for factual/sports (no English leakage)
+  const synth = synthesizeAnswer(query, cited, opts.priorAnswer, lang);
+  if (synth && synth.length > 20) {
+    // If Workers AI available, can refine synth further
+    if (env.AI && context.length > 40) {
+      try {
+        const refined = await generateWithWorkersAI(
+          env.AI,
+          query,
+          context,
+          system + ' Parti da questa bozza e migliorala solo se necessario: ' + synth
+        );
+        if (refined && refined.length > 15) {
+          return {
+            text: polish(refined, lang),
+            provider: 'workers-ai',
+            title: '',
+            citations: cited.map((c) => c.id),
+          };
+        }
+      } catch (e) {}
+    }
+    return {
+      text: polish(synth, lang),
+      provider: 'synth',
+      title: '',
+      citations: cited.map((c) => c.id),
+    };
+  }
 
   if (env.AI && context.length > 40) {
     try {
       const text = await generateWithWorkersAI(env.AI, query, context, system);
       if (text) {
         return {
-          text: sanitizeUserText(text),
-          provider: 'workers-ai-grounded',
+          text: polish(text, lang),
+          provider: 'workers-ai',
           title: '',
           citations: cited.map((c) => c.id),
         };
@@ -346,8 +343,8 @@ async function groundedGenerate(query, context, cited, opts) {
       const text = await generateWithPerplexity(env.PERPLEXITY_API_KEY, query, context, system);
       if (text) {
         return {
-          text: sanitizeUserText(text),
-          provider: 'perplexity-grounded',
+          text: polish(text, lang),
+          provider: 'perplexity',
           title: '',
           citations: cited.map((c) => c.id),
         };
@@ -355,20 +352,10 @@ async function groundedGenerate(query, context, cited, opts) {
     } catch (e) {}
   }
 
-  const extractive = extractiveGrounded(query, cited, lang);
-  if (extractive.text) {
+  if (opts.priorAnswer && opts.priorAnswer.text) {
     return {
-      text: sanitizeUserText(extractive.text),
-      provider: 'extractive-grounded',
-      title: '',
-      citations: extractive.citations,
-    };
-  }
-
-  if (opts.priorAnswer && opts.priorAnswer.text && opts.priorAnswer.text.length > 40) {
-    return {
-      text: sanitizeUserText(opts.priorAnswer.text),
-      provider: (opts.priorAnswer.provider || 'retrieve') + '-grounded',
+      text: polish(opts.priorAnswer.text, lang),
+      provider: 'retrieve',
       title: '',
       citations: cited.slice(0, 3).map((c) => c.id),
     };
@@ -378,8 +365,8 @@ async function groundedGenerate(query, context, cited, opts) {
     text:
       lang === 'en'
         ? 'I could not find a reliable answer from the available sources.'
-        : 'Non ho trovato una risposta affidabile dalle fonti disponibili.',
-    provider: 'grounded-empty',
+        : 'Non ho trovato una risposta chiara e aggiornata nelle fonti disponibili.',
+    provider: 'empty',
     title: '',
     citations: [],
   };
@@ -387,18 +374,22 @@ async function groundedGenerate(query, context, cited, opts) {
 
 async function generateWithWorkersAI(AI, query, context, system) {
   const user =
-    'Domanda: ' + query + '\n\nContesto dalle fonti:\n' + context + '\n\nRisposta chiara e utile:';
+    'Domanda dell\'utente: ' +
+    query +
+    '\n\nFonti:\n' +
+    context +
+    '\n\nRispondi in modo diretto e naturale:';
   const res = await AI.run('@cf/meta/llama-3.1-8b-instruct', {
     messages: [
       { role: 'system', content: system },
       { role: 'user', content: user },
     ],
-    max_tokens: 600,
-    temperature: 0.15,
+    max_tokens: 500,
+    temperature: 0.2,
   });
   const text =
     (res && (res.response || res.result || res.text)) || (typeof res === 'string' ? res : '');
-  return String(text || '').trim().slice(0, 1400);
+  return String(text || '').trim().slice(0, 1200);
 }
 
 async function generateWithPerplexity(apiKey, query, context, system) {
@@ -414,11 +405,11 @@ async function generateWithPerplexity(apiKey, query, context, system) {
         { role: 'system', content: system },
         {
           role: 'user',
-          content: 'Question: ' + query + '\n\nSources:\n' + context + '\n\nClear useful answer:',
+          content: 'User question: ' + query + '\n\nSources:\n' + context + '\n\nDirect answer:',
         },
       ],
       temperature: 0.15,
-      max_tokens: 600,
+      max_tokens: 500,
     }),
   });
   if (!res.ok) throw new Error('perplexity ' + res.status);
@@ -428,53 +419,5 @@ async function generateWithPerplexity(apiKey, query, context, system) {
     ''
   )
     .trim()
-    .slice(0, 1400);
-}
-
-function extractiveGrounded(query, cited, lang) {
-  if (!cited.length) return { text: '', citations: [] };
-
-  const qTokens = new Set(tokenize(query));
-  const scored = [];
-
-  for (const c of cited) {
-    const sentences = String(c.text || '')
-      .split(/(?<=[.!?])\s+/)
-      .filter((s) => s.length > 20);
-    for (const s of sentences) {
-      const toks = tokenize(s);
-      let hit = 0;
-      for (const t of toks) if (qTokens.has(t)) hit++;
-      if (hit === 0 && qTokens.size > 0) continue;
-      scored.push({ s: s.trim(), hit, id: c.id, len: s.length });
-    }
-  }
-
-  scored.sort((a, b) => b.hit - a.hit || a.len - b.len);
-
-  const picked = [];
-  const usedIds = new Set();
-  const seen = new Set();
-  for (const item of scored) {
-    const key = item.s.slice(0, 48).toLowerCase();
-    if (seen.has(key)) continue;
-    seen.add(key);
-    picked.push(item);
-    usedIds.add(item.id);
-    if (picked.length >= (qTokens.size > 4 ? 4 : 3)) break;
-  }
-
-  if (!picked.length) {
-    const c0 = cited[0];
-    const first = String(c0.text || '')
-      .split(/(?<=[.!?])\s+/)
-      .filter((s) => s.length > 25)
-      .slice(0, 2);
-    if (!first.length) {
-      return { text: String(c0.text || '').slice(0, 500), citations: [c0.id] };
-    }
-    return { text: first.map((s) => s.trim()).join(' '), citations: [c0.id] };
-  }
-
-  return { text: picked.map((p) => p.s).join(' '), citations: [...usedIds] };
+    .slice(0, 1200);
 }
