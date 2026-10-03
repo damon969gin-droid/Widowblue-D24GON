@@ -20,10 +20,10 @@ const MAX_MEMORY=24;
 let threadMessages=[];
 let appBusy=false;
 
-function pushMemory(role,text,entity){
-  chatMemory.push({role,text:String(text||'').slice(0,800),entity:entity||null,at:Date.now()});
+function pushMemory(role,text,entity,topic){
+  chatMemory.push({role,text:String(text||'').slice(0,900),entity:entity||null,topic:topic||null,at:Date.now()});
   while(chatMemory.length>MAX_MEMORY)chatMemory.shift();
-  try{localStorage.setItem('wb_chat_memory',JSON.stringify(chatMemory.slice(-16)))}catch(e){}
+  try{localStorage.setItem('wb_chat_memory',JSON.stringify(chatMemory.slice(-20)))}catch(e){}
 }
 try{
   const saved=JSON.parse(localStorage.getItem('wb_chat_memory')||'[]');
@@ -376,7 +376,7 @@ async function sendQuery(){
   pushMemory('user',displayText);
 
   const lang=langSelVal==='auto'?detected:langSelVal;
-  const history=chatMemory.slice(-12).map(m=>({role:m.role,text:m.text,entity:m.entity}));
+  const history=chatMemory.slice(-16).map(m=>({role:m.role,text:m.text,entity:m.entity||null,topic:m.topic||null}));
   try{
     if(typeof WB!=='undefined'&&WB.api){
       const body={
@@ -402,11 +402,11 @@ async function sendQuery(){
           const msg=(data.answer&&data.answer.text)||(data.image&&data.image.message)||'Immagine generata.';
           const url=(data.image&&(data.image.url||data.image.imageUrl))||data.imageUrl;
           appendReply({plain:msg,html:'<div class="ans-text">'+esc(msg)+'</div>',imageUrl:url});
-          pushMemory('assistant',msg);
+          pushMemory('assistant',msg,data.contextEntity||null,data.contextTopic||null);
         }else{
           const formatted=formatSearchAnswer(data);
           appendReply(formatted);
-          pushMemory('assistant',formatted.plain,data.contextEntity||null);
+          pushMemory('assistant',formatted.plain,data.contextEntity||data.contextTopic||null,data.contextTopic||null);
         }
       }else{
         appendReply({plain:'Non è stato possibile completare la ricerca. Riprova.',html:null});
