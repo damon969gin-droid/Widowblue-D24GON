@@ -53,6 +53,7 @@ export async function runRAG(query, opts = {}) {
     topic: convCtx && convCtx.topic,
     entity: convCtx && convCtx.entity,
     domain: convCtx && convCtx.domain,
+    summary: convCtx && convCtx.summary,
   });
 
   const sources = cited
@@ -280,11 +281,14 @@ async function groundedGenerate(query, context, cited, opts) {
   const langLabel = langName(lang);
 
   let topicHint = '';
-  if (opts.topic || opts.entity) {
+  if (opts.topic || opts.entity || opts.summary) {
     topicHint =
-      ' Contesto conversazione: ' +
-      [opts.entity, opts.topic].filter(Boolean).join(' / ') +
-      '. Resta sul tema.';
+      ' MEMORIA CHAT: resta coerente con il filo gia discusso. ' +
+      (opts.entity || opts.topic
+        ? 'Argomento in corso: ' + [opts.entity, opts.topic].filter(Boolean).join(' / ') + '. '
+        : '') +
+      (opts.summary ? 'Contesto recente: ' + String(opts.summary).slice(0, 500) + '. ' : '') +
+      'Se la domanda e breve o vaga, interpreta rispetto a questo argomento, senza cambiare tema.';
   }
 
   const system =
@@ -298,6 +302,7 @@ async function groundedGenerate(query, context, cited, opts) {
     '5) Se i fatti sono incompleti, dillo in modo trasparente. ' +
     '6) Non menzionare provider, RAG, pipeline, "secondo le fonti". ' +
     '7) Non mischiare lingue. ' +
+    '8) Usa la memoria della chat: se il cliente continua un tema, rispondi su quello anche se non lo ripete. ' +
     topicHint;
 
   const userMsg =
