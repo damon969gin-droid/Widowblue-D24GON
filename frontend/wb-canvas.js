@@ -84,6 +84,10 @@ function proj(p){
 }
 
 const pulses=[];
+let displayCount=0;
+let countTarget=0;
+const STD_ACTIVE=200;
+const MAX_AGENTS=nodes.length;
 
 function syncFlags(){
   if(window.WBNet){
@@ -95,26 +99,46 @@ function syncFlags(){
 }
 
 function igniteNetwork(){
-  nodes.forEach((n)=>{
-    if(n.k===0) n.act=0.98;
-    else if(n.k===1) n.act=0.82+Math.random()*0.12;
-    else if(n.k===2) n.act=0.72+Math.random()*0.18;
-    else n.act=0.65+Math.random()*0.25;
-  });
+  if(allMode){
+    nodes.forEach((n)=>{
+      if(n.k===0) n.act=0.98;
+      else if(n.k===1) n.act=0.82+Math.random()*0.12;
+      else if(n.k===2) n.act=0.72+Math.random()*0.18;
+      else n.act=0.65+Math.random()*0.25;
+    });
+    countTarget=MAX_AGENTS;
+  }else{
+    nodes.forEach((n,i)=>{
+      if(n.k===0) n.act=0.95;
+      else if(i<12+STD_ACTIVE) n.act=0.55+Math.random()*0.35;
+      else n.act=0;
+    });
+    let on=0;
+    for(let i=0;i<nodes.length;i++) if(nodes[i].act>0.05) on++;
+    if(on<STD_ACTIVE){
+      for(let i=12;i<nodes.length && on<STD_ACTIVE;i++){
+        if(nodes[i].act<=0.05){ nodes[i].act=0.5+Math.random()*0.4; on++; }
+      }
+    }
+    countTarget=STD_ACTIVE;
+  }
   pulses.length=0;
   for(let i=0;i<12;i++){
     const kids=nodes[i].kids||[];
     for(let k=0;k<kids.length;k++){
+      if(!allMode && nodes[kids[k]].act<=0.05) continue;
       pulses.push({from:i,to:kids[k],t:-(k%8)*0.028-Math.random()*0.03});
     }
     pulses.push({from:i,to:(i+1)%12,t:-Math.random()*0.06});
     pulses.push({from:i,to:(i+3)%12,t:-0.03-Math.random()*0.06});
-    pulses.push({from:i,to:(i+5)%12,t:-0.05-Math.random()*0.08});
+    if(allMode) pulses.push({from:i,to:(i+5)%12,t:-0.05-Math.random()*0.08});
   }
-  for(let p=0;p<Math.min(EDGE.length,1800);p++){
+  const edgeCap=allMode?1800:900;
+  for(let p=0;p<Math.min(EDGE.length,edgeCap);p++){
     const e=EDGE[p];
     if(!e) continue;
     if(e[0]<12 && e[1]>=12) continue;
+    if(!allMode && (nodes[e[0]].act<=0.05 || nodes[e[1]].act<=0.05)) continue;
     pulses.push({from:e[0],to:e[1],t:-0.08-Math.random()*0.35});
   }
 }
@@ -122,6 +146,7 @@ function igniteNetwork(){
 function dimNetwork(){
   nodes.forEach(n=>{n.act=0});
   pulses.length=0;
+  countTarget=0;
 }
 
 window.WBNet={
@@ -136,8 +161,9 @@ window.WBNet={
         if(n.k===0) n.act=0.95;
         else n.act=0.7+Math.random()*0.25;
       });
-      igniteNetwork();
-      if(!running) pulses.length=0;
+      countTarget=MAX_AGENTS;
+      if(running) igniteNetwork();
+      else pulses.length=0;
     } else {
       this.running=false; running=false; window.running=false;
       dimNetwork();
@@ -147,10 +173,19 @@ window.WBNet={
     this.running=!!v;
     running=!!v;
     window.running=!!v;
-    if(v) igniteNetwork();
-    else {
+    if(v){
+      igniteNetwork();
+    } else {
       pulses.length=0;
-      if(!allMode) dimNetwork();
+      if(allMode){
+        nodes.forEach((n)=>{
+          if(n.k===0) n.act=0.9;
+          else n.act=Math.max(0.55, n.act*0.9);
+        });
+        countTarget=MAX_AGENTS;
+      } else {
+        dimNetwork();
+      }
     }
   },
   ignite:igniteNetwork,
@@ -224,8 +259,7 @@ function draw(){
     p.t+=fullNet?.032:.026;
     if(p.t>1){pulses.splice(i,1);continue}
     if(p.t<0) continue;
-    if(!running&&!fullNet){ if(p.t>0.01){pulses.splice(i,1);} continue; }
-    if(!running&&fullNet) continue;
+    if(!running){ pulses.splice(i,1); continue; }
     const a=p.from>=0?P[p.from]:[cx,cy],b=P[p.to];if(!a||!b)continue;
     const px=a[0]+(b[0]-a[0])*p.t,py=a[1]+(b[1]-a[1])*p.t;
     const trail=Math.max(0,p.t-.14);
@@ -245,7 +279,9 @@ function draw(){
     const nNew=fullNet?20:12;
     for(let k=0;k<nNew;k++){
       const e=EDGE[(Math.random()*EDGE.length)|0];
-      if(e) pulses.push({from:e[0],to:e[1],t:-Math.random()*0.2});
+      if(!e) continue;
+      if(!allMode && (nodes[e[0]].act<=0.05 || nodes[e[1]].act<=0.05)) continue;
+      pulses.push({from:e[0],to:e[1],t:-Math.random()*0.2});
     }
   }
 
@@ -280,7 +316,7 @@ function draw(){
     x.fillStyle=halo;x.beginPath();x.arc(cx,cy,coreR*2.2,0,6.283);x.fill();
   }
 
-  const ord=P.map((q,i)=>i).sort((a,b)=>P[b][2]-P[a][2]);let act=0;
+  const ord=P.map((q,i)=>i).sort((a,b)=>P[b][2]-P[a][2]);
   ord.forEach(i=>{
     const n=nodes[i],q=P[i];
     if(allMode&&running){
@@ -288,10 +324,14 @@ function draw(){
       if(n.act<.55)n.act=Math.min(0.92,n.act+.04);
     }else if(allMode&&!running){
       n.act=Math.max(0.55,n.act*0.997+0.003);
+    }else if(running&&!allMode){
+      if(n.act>0.05) n.act=Math.min(0.95, Math.max(0.45, n.act*0.998+0.008));
+      else n.act=0;
     }else{
-      n.act*=.986;
+      n.act*=.92;
+      if(n.act<0.03) n.act=0;
     }
-    const g=n.act>.05;if(g)act++;
+    const g=n.act>.05;
     const depth=Math.max(.22,Math.min(1,.68-q[2]*.45));
     x.globalAlpha=g?1:depth*(n.k?.72:1);
     if(fullNet){
@@ -313,8 +353,15 @@ function draw(){
     }
   });
   x.globalAlpha=1;
+  const tEl=document.getElementById('t');
+  if(tEl) tEl.textContent=String(MAX_AGENTS);
+  if(allMode && !running) countTarget=MAX_AGENTS;
+  if(!allMode && !running) countTarget=0;
+  const diff=countTarget-displayCount;
+  if(Math.abs(diff)>0.5) displayCount+=diff*0.12;
+  else displayCount=countTarget;
   const nEl=document.getElementById('n');
-  if(nEl)nEl.textContent=act;
+  if(nEl) nEl.textContent=String(Math.round(Math.max(0, Math.min(MAX_AGENTS, displayCount))));
   requestAnimationFrame(draw);
 }
 requestAnimationFrame(draw);
