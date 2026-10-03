@@ -1,3 +1,4 @@
+/* WB canvas v2026-10-04-starburst */
 const cv=document.getElementById('c'),x=cv.getContext('2d');
 let W,H,cx,cy,R,t=0,yaw=.4,pit=.28,roll=0,drag=false,lx=0,ly=0,running=false,allMode=false,ptrId=null;
 const ROLES=['Coordinatore','Frontend','Backend','Design','Database','Media','Voce','Test','Memoria','Deploy','Sicurezza','Documenti'];
@@ -202,26 +203,24 @@ function draw(){
   const P=nodes.map(n=>proj(n.p));
   const fullNet=!!allMode;
 
-  if(fullNet){
-    const amb=x.createRadialGradient(cx+R*.55,cy-R*.25,0,cx+R*.55,cy-R*.25,R*1.1);
-    amb.addColorStop(0,'rgba(210,160,40,.18)');
-    amb.addColorStop(.45,'rgba(180,120,20,.06)');
+  {
+    const amb=x.createRadialGradient(cx+R*.8,cy-R*.25,0,cx+R*.8,cy-R*.25,R*1.5);
+    amb.addColorStop(0,fullNet?'rgba(255,200,40,.35)':'rgba(255,190,50,.22)');
+    amb.addColorStop(.4,fullNet?'rgba(230,150,20,.14)':'rgba(220,140,20,.08)');
+    amb.addColorStop(.75,'rgba(160,90,10,.03)');
     amb.addColorStop(1,'rgba(0,0,0,0)');
     x.globalAlpha=1;x.fillStyle=amb;x.fillRect(0,0,W,H);
   }
 
   if(fullNet){
     x.lineCap='round';
+    // starburst denso oro come video frame 13
     for(let i=0;i<nodes.length;i++){
       const q=P[i];if(!q)continue;
-      const n=nodes[i];
-      const str=n.act||0.5;
       const isLead=i<12;
-      x.globalAlpha=isLead?0.22+str*0.18:0.08+str*0.12;
-      x.strokeStyle=isLead
-        ?'rgba(220,185,90,'+(0.55+str*0.3)+')'
-        :'rgba(200,165,70,'+(0.4+str*0.25)+')';
-      x.lineWidth=isLead?1.15:0.55+str*0.35;
+      x.globalAlpha=isLead?0.55:0.30;
+      x.strokeStyle=isLead?'#ffd84a':'#ffc830';
+      x.lineWidth=isLead?1.35:0.55;
       x.beginPath();x.moveTo(cx,cy);x.lineTo(q[0],q[1]);x.stroke();
     }
   } else {
@@ -238,14 +237,11 @@ function draw(){
     const A=P[a],B=P[b];if(!A||!B)continue;
     if(fullNet){
       const lead=a<12&&b<12;
-      const spoke=(a<12&&b>=12)||(b<12&&a>=12);
-      x.globalAlpha=lead?0.5+strength*0.28:(spoke?0.28+strength*0.35:0.18+strength*0.3);
-      x.strokeStyle=lead
-        ?('rgba(230,195,95,'+(0.75+strength*0.2)+')')
-        :(spoke
-          ?('rgba(210,175,80,'+(0.55+strength*0.25)+')')
-          :('rgba(190,155,65,'+(0.45+strength*0.3)+')'));
-      x.lineWidth=lead?1.6:(spoke?1.05+strength*0.4:0.7+strength*0.45);
+      // solo mesh core ciano; i raggi radiali fanno lo starburst
+      if(!lead) continue;
+      x.globalAlpha=0.7;
+      x.strokeStyle='#6ef0ff';
+      x.lineWidth=2.0;
     }else{
       x.globalAlpha=.22+strength*.35;
       x.strokeStyle='rgba(140,135,110,.7)';
@@ -335,11 +331,11 @@ function draw(){
     const depth=Math.max(.22,Math.min(1,.68-q[2]*.45));
     x.globalAlpha=g?1:depth*(n.k?.72:1);
     if(fullNet){
-      x.fillStyle=g
-        ?(n.k===0?'rgba(255,210,100,.98)':'rgba(235,190,70,.92)')
-        :'rgba(180,150,60,.55)';
+      // tutti i nodi oro pieno (video frame 13)
+      n.act=Math.max(n.act,0.85);
+      x.fillStyle=n.k===0?'#ffe050':'#ffd030';
     }else{
-      x.fillStyle=g?'rgba(200,175,120,.88)':'#4db8d0';
+      x.fillStyle=g?'rgba(200,175,120,.88)':'#3ec8e0';
     }
     const sz=(n.s+(g?n.act*(fullNet?1.35:1.0):0))*q[3];
     x.beginPath();x.arc(q[0],q[1],sz,0,6.283);x.fill();
