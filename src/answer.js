@@ -3,7 +3,7 @@ import { AI_GLOSSARY, GLOSSARY_ALIASES } from './ai_terms.js';
 /**
  * WidowBlue – motore di risposta chat
  * Sintesi ragionata e naturale (non copia web).
- * Glossario tecnico: vedi src/ai_terms.js (elenco completo architetture/training/infra/RAG/agenti/safety).
+ * Glossario tecnico completo: src/ai_terms.js
  */
 
 const TEAMS_IT = [
@@ -83,7 +83,6 @@ function naturalize(query, text, lang) {
 function mergeDeep(core, extra, lang) {
   const e = String(extra || '').trim();
   if (!e) return core;
-  if (lang === 'en') return core + ' ' + e.slice(0, 500);
   return core + ' ' + e.slice(0, 500);
 }
 
