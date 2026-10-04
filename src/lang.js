@@ -62,7 +62,7 @@ export function detectLang(text) {
   if (/[ãõáéíóúâêôç]/i.test(t)) scores.pt += 2;
 
   const rules = [
-    ['it', /\b(il|la|di|del|della|che|cosa|quando|dove|perché|perche|come|chi|ciao|grazie|sono|con|per|una|questo|questa|classifica|punti|primo|degli|delle|agli|nelle|risposta|domanda)\b/gi],
+    ['it', /\b(il|la|di|del|della|che|cosa|quando|dove|perché|perche|come|chi|ciao|grazie|sono|con|per|una|questo|questa|classifica|punti|primo|degli|delle|agli|nelle|risposta|domanda|deriva|parola)\b/gi],
     ['en', /\b(the|and|with|from|what|when|where|who|why|how|is|are|this|that|points|standings|followed|please|because|which|would|could|should)\b/gi],
     ['es', /\b(qué|cuando|dónde|quién|porque|hola|está|también|como|pero|para|una|los|las|del|respuesta)\b/gi],
     ['fr', /\b(quoi|quand|où|pourquoi|bonjour|avec|pour|une|les|des|est|sont|réponse|comment)\b/gi],
@@ -121,10 +121,11 @@ export function noAnswerMsg(lang) {
 export async function translateText(text, from, to) {
   const q = String(text || '').trim().slice(0, 480);
   if (!q) return '';
-  let f = String(from || 'autodetect').slice(0, 5).toLowerCase();
-  const t = String(to || 'en').slice(0, 2).toLowerCase();
+  let f = String(from || 'autodetect').slice(0, 12).toLowerCase();
+  const t = String(to || '').slice(0, 2).toLowerCase();
+  if (!t || t === 'au' || t === 'auto') return q;
   if (f === 'auto') f = 'autodetect';
-  if (f === t) return q;
+  if (f === t || (f !== 'autodetect' && f.slice(0, 2) === t)) return q;
   try {
     const url =
       'https://api.mymemory.translated.net/get?q=' +
@@ -135,8 +136,15 @@ export async function translateText(text, from, to) {
     if (!res.ok) return q;
     const data = await res.json();
     const out = (data && data.responseData && data.responseData.translatedText) || '';
-    if (!out || /INVALID|QUERY LENGTH|MYMEMORY WARNING/i.test(out)) return q;
-    return String(out).trim();
+    if (!out) return q;
+    const s = String(out).trim();
+    if (
+      /PLEASE SELECT TWO DISTINCT LANGUAGES/i.test(s) ||
+      /INVALID|QUERY LENGTH|MYMEMORY WARNING|LANGUAGE NOT SUPPORTED/i.test(s)
+    ) {
+      return q;
+    }
+    return s;
   } catch (_) {
     return q;
   }
@@ -149,7 +157,7 @@ export async function forceLang(text, targetLang) {
   if (target === 'auto' || !LANG_NAMES[target]) return t;
 
   const detected = detectLang(t);
-  if (detected === target && looksMostly(t, target)) return t;
+  if (detected === target) return t;
 
   try {
     const chunks = [];
@@ -172,11 +180,13 @@ export async function forceLang(text, targetLang) {
     const out = [];
     for (const c of chunks) {
       if (!c) continue;
-      const tr = await translateText(c, detected === target ? 'autodetect' : detected, target);
-      out.push(tr && tr.length > 5 ? tr : c);
+      const src = detected && detected !== target ? detected : 'autodetect';
+      const tr = await translateText(c, src, target);
+      if (!tr || /PLEASE SELECT TWO DISTINCT/i.test(tr)) out.push(c);
+      else out.push(tr.length > 5 ? tr : c);
     }
     const joined = out.join(' ').replace(/\s{2,}/g, ' ').trim();
-    if (joined.length > 10) return joined;
+    if (joined.length > 10 && !/PLEASE SELECT TWO DISTINCT/i.test(joined)) return joined;
   } catch (_) {}
   return t;
 }
@@ -184,7 +194,7 @@ export async function forceLang(text, targetLang) {
 function looksMostly(text, lang) {
   const t = String(text || '');
   if (lang === 'it') {
-    const it = (t.match(/\b(il|la|di|che|per|con|una|sono|della|questo|non|come)\b/gi) || []).length;
+    const it = (t.match(/\b(il|la|di|che|per|con|una|sono|della|questo|non|come|deriva|parola|ciao)\b/gi) || []).length;
     const en = (t.match(/\b(the|and|with|from|what|is|are|this|that|which)\b/gi) || []).length;
     return it >= en;
   }
