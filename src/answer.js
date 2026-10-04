@@ -1,56 +1,15 @@
 import { noAnswerMsg, detectLang } from './lang.js';
+import { AI_GLOSSARY, GLOSSARY_ALIASES } from './ai_terms.js';
 /**
  * WidowBlue – motore di risposta chat
  * Sintesi ragionata e naturale (non copia web).
+ * Glossario tecnico: vedi src/ai_terms.js (elenco completo architetture/training/infra/RAG/agenti/safety).
  */
 
 const TEAMS_IT = [
   'Napoli','Inter','Milan','Juventus','Roma','Lazio','Atalanta','Fiorentina',
   'Bologna','Torino','Genoa','Como','Udinese','Cagliari','Parma','Lecce',
   'Empoli','Venezia','Monza','Verona','Sassuolo','Cremonese','Pisa','Spezia',
-];
-
-const AI_GLOSSARY = {
-  addestramento: { it: 'L\'addestramento (training) è il processo in cui un modello regola i parametri sui dati per ridurre l\'errore.', en: 'Training adjusts model parameters on data to minimize error.' },
-  agi: { it: 'AGI indica un\'AI con capacità generali paragonabili a quelle umane su molti compiti.', en: 'AGI means AI with broad human-level abilities across domains.' },
-  'agente ai': { it: 'Un agente AI persegue un obiettivo, pianifica e usa strumenti in autonomia.', en: 'An AI agent pursues goals using tools over multiple steps.' },
-  'ai generativa': { it: 'L\'AI generativa crea contenuti nuovi (testo, immagini, codice) da pattern appresi.', en: 'Generative AI creates new content from learned patterns.' },
-  allucinazione: { it: 'Allucinazione: informazione plausible ma non supportata dai fatti. Si riduce con grounding.', en: 'Hallucination is plausible but false output; reduced via grounding.' },
-  bias: { it: 'Bias: distorsione sistematica nei dati o nelle predizioni.', en: 'Bias is systematic distortion in data or predictions.' },
-  'chain of thought': { it: 'Chain of thought: ragionamento a passi interni prima della risposta finale.', en: 'Chain of thought is step-by-step intermediate reasoning.' },
-  'catena del pensiero': { it: 'Chain of thought: ragionamento a passi interni prima della risposta finale.', en: 'Chain of thought is step-by-step intermediate reasoning.' },
-  dataset: { it: 'Dataset: insieme di esempi per train, validazione o test.', en: 'A dataset is the collection of examples for train/val/test.' },
-  'deep learning': { it: 'Deep learning: reti neurali multi-strato per rappresentazioni gerarchiche.', en: 'Deep learning uses multi-layer neural nets.' },
-  distillazione: { it: 'Distillazione: trasferimento di conoscenza da un modello grande a uno più piccolo.', en: 'Distillation transfers knowledge from teacher to student model.' },
-  'fine-tuning': { it: 'Fine-tuning: adatta un modello pre-addestrato a un compito specifico.', en: 'Fine-tuning adapts a pretrained model to a task.' },
-  llm: { it: 'LLM: modello linguistico di grandi dimensioni, tipicamente Transformer.', en: 'An LLM is a large Transformer-based language model.' },
-  'machine learning': { it: 'Machine learning: migliorare prestazioni da dati senza regole scritte a mano per ogni caso.', en: 'Machine learning improves performance from data without hand-coded rules.' },
-  'pre-training': { it: 'Pre-training: apprendimento generico su grandi corpus prima del fine-tuning.', en: 'Pre-training is large-scale generic learning before fine-tuning.' },
-  'prompt engineering': { it: 'Prompt engineering: progettare istruzioni per risposte migliori senza riallenare i pesi.', en: 'Prompt engineering crafts instructions without retraining weights.' },
-  'rete neurale': { it: 'Rete neurale: unità collegate da pesi addestrate tipicamente con backpropagation.', en: 'A neural network maps inputs via weighted layers.' },
-  'superintelligenza artificiale': { it: 'ASI: ipotetica AI oltre le capacità umane nella maggior parte dei domini.', en: 'ASI is hypothetical AI beyond human cognitive ability.' },
-  token: { it: 'Token: unità base del testo per i modelli linguistici.', en: 'A token is the basic text unit models process.' },
-};
-
-const GLOSSARY_ALIASES = [
-  ['addestramento', /\b(addestramento|training)\b/i],
-  ['agi', /\bagi\b|intelligenza generale/i],
-  ['agente ai', /\bagente\s*ai\b|\bai\s*agent\b/i],
-  ['ai generativa', /ai\s*generativa|generative\s*ai/i],
-  ['allucinazione', /allucinazion|hallucin/i],
-  ['bias', /\bbias\b|distorsion/i],
-  ['chain of thought', /chain\s*of\s*thought|catena del pensier/i],
-  ['dataset', /\bdataset\b/i],
-  ['deep learning', /deep\s*learning/i],
-  ['distillazione', /distillazion|knowledge\s*distillation/i],
-  ['fine-tuning', /fine[\s-]?tuning|\blora\b/i],
-  ['llm', /\bllm\b|large language model/i],
-  ['machine learning', /machine\s*learning|apprendimento automatico/i],
-  ['pre-training', /pre[\s-]?training/i],
-  ['prompt engineering', /prompt\s*engineering/i],
-  ['rete neurale', /rete\s*neural|neural\s*network/i],
-  ['superintelligenza artificiale', /superintelligen|\basi\b/i],
-  ['token', /\btoken\b|tokenizzaz/i],
 ];
 
 function glossaryAnswer(query, lang) {
