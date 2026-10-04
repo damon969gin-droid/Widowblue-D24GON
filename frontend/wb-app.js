@@ -96,8 +96,8 @@ async function shareText(title,text,btn){
   }catch(e){}
 }
 
-const LANGS=[['auto','AUTO'],['it','IT'],['en','EN'],['es','ES'],['fr','FR'],['de','DE'],['pt','PT'],
-  ['ja','JA'],['zh','ZH'],['ko','KO'],['ar','AR'],['ru','RU'],['hi','HI'],['tr','TR'],['nl','NL'],['pl','PL']];
+const LANGS=[['it','IT'],['en','EN'],['es','ES'],['fr','FR'],['de','DE'],['pt','PT'],
+  ['ja','JA'],['zh','ZH'],['ko','KO'],['ar','AR'],['ru','RU'],['hi','HI'],['tr','TR'],['nl','NL'],['pl','PL'],['auto','AUTO']];
 
 function detectInputLang(text){
   const t=String(text||'');
@@ -117,9 +117,9 @@ function detectInputLang(text){
   if(/\b(ne|ve|bir|için|nedir)\b/i.test(t))return 'tr';
   const it=(t.match(/\b(il|la|di|che|cosa|quando|dove|perché|ciao|sono|per|con)\b/gi)||[]).length;
   const en=(t.match(/\b(the|and|with|what|when|where|is|are|this|that)\b/gi)||[]).length;
-  if(/[àèéìòù]/i.test(t)||it>=2)return 'it';
+  if(/[àèéìòù]/i.test(t)||it>=1)return 'it';
   if(en>=2)return 'en';
-  return it>=en?'it':'en';
+  return 'it';
 }
 
 async function translateClient(text, from, to){
@@ -161,10 +161,10 @@ async function clientForceLang(text, target){
 const langSel=document.getElementById('lang');
 if(langSel){
   LANGS.forEach(([v,l])=>{const o=document.createElement('option');o.value=v;o.textContent=l;langSel.appendChild(o)});
-  try{const sl=localStorage.getItem('wb_lang');if(sl)langSel.value=sl}catch(e){}
+  try{const sl=localStorage.getItem('wb_lang');langSel.value=sl||'it'}catch(e){try{langSel.value='it'}catch(_){}}
   langSel.onchange=()=>{try{localStorage.setItem('wb_lang',langSel.value)}catch(e){}};
 }
-function currentLang(){return (langSel&&langSel.value)||'auto'}
+function currentLang(){return (langSel&&langSel.value)||'it'}
 
 function applyAllAgentsVisual(on){
   try{
@@ -202,7 +202,7 @@ if(clipBtn&&fileInput){
   };
 }
 
-if(voiceBtn&&window.SpeechRecognition||window.webkitSpeechRecognition){
+if(voiceBtn&&(window.SpeechRecognition||window.webkitSpeechRecognition)){
   const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
   let recognition=null;
   voiceBtn.onclick=()=>{
@@ -247,12 +247,6 @@ async function sendQuery(){
   const detected=detectInputLang(text||'');
   let displayText=text||'(allegati)';
   let queryForApi=text;
-  if(langSelVal!=='auto'&&langSelVal!==detected&&text){
-    try{
-      const tr=await translateClient(text, detected, langSelVal);
-      if(tr&&tr.length>2){displayText=text; queryForApi=text;}
-    }catch(e){}
-  }
 
   const userDiv=document.createElement('div');
   userDiv.className='msg user';
@@ -305,11 +299,12 @@ async function sendQuery(){
         }else{
           let formatted=formatSearchAnswer(data);
           try{
-            if(lang && lang!=='auto' && formatted && formatted.plain && formatted.plain.length>25){
+            if(lang && lang!=='auto' && formatted && formatted.plain && formatted.plain.length>20){
               const det=detectInputLang(formatted.plain);
-              if(det!==lang){
+              const enLeak=lang==='it' && /\b(the|and|with|this|that|is|are|from|which|because|however)\b/i.test(formatted.plain);
+              if(det!==lang || enLeak){
                 const forced=await clientForceLang(formatted.plain, lang);
-                if(forced && forced.length>20){
+                if(forced && forced.length>15){
                   formatted={plain:forced, html:'<div class="ans-text">'+esc(forced)+'</div>', imageUrl:formatted.imageUrl||null};
                 }
               }
