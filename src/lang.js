@@ -45,8 +45,9 @@ export function detectLang(text) {
   const enHits = (t.match(/\b(the|and|with|from|what|when|where|who|why|how|is|are|this|that|points|standings|followed)\b/gi) || []).length;
   if (/[àèéìòù]/i.test(t) || itHits >= 2) return 'it';
   if (enHits >= 2 || /\b(what|when|where|who|why|how|the|and|please)\b/i.test(t)) return 'en';
-  if (itHits > enHits) return 'it';
-  return 'en';
+  if (itHits >= enHits) return 'it';
+  // default italiano (prodotto IT-first)
+  return 'it';
 }
 
 export function resolveLang(body, prompt) {
@@ -99,16 +100,34 @@ export async function translateText(text, from, to) {
 
 export async function forceLang(text, targetLang) {
   const t = String(text || '').trim();
-  if (!t || t.length < 12) return t;
+  if (!t || t.length < 8) return t;
   const target = String(targetLang || 'it').slice(0, 2);
   const detected = detectLang(t);
   if (detected === target) return t;
+  // traduci a blocchi (MyMemory max ~500 char)
   try {
-    const tr = await translateText(t.slice(0, 480), detected, target);
-    if (tr && tr.length > 20) {
-      const after = detectLang(tr);
-      if (after === target || tr.length > 30) return tr;
+    const chunks = [];
+    let rest = t;
+    while (rest.length > 0) {
+      let cut = Math.min(450, rest.length);
+      if (cut < rest.length) {
+        const sp = rest.lastIndexOf(' ', cut);
+        if (sp > 200) cut = sp;
+      }
+      chunks.push(rest.slice(0, cut));
+      rest = rest.slice(cut).trimStart();
+      if (chunks.length >= 8) {
+        chunks[chunks.length - 1] += (rest ? ' ' + rest : '');
+        break;
+      }
     }
+    const out = [];
+    for (const c of chunks) {
+      const tr = await translateText(c, detected, target);
+      out.push(tr && tr.length > 10 ? tr : c);
+    }
+    const joined = out.join(' ').replace(/\s+/g, ' ').trim();
+    if (joined.length > 20) return joined;
   } catch (_) {}
   return t;
 }
