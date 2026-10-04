@@ -61,23 +61,6 @@ button.rec{border-color:var(--am);color:var(--am)}
 #panel{display:none;position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);width:min(92vw,520px);max-height:80vh;overflow:auto;background:#0a1520;border:1px solid rgba(77,225,255,.35);border-radius:12px;padding:16px;z-index:11}
 #panel h3{margin:0 0 10px;color:var(--cy)}
 #panel .actions{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap}
-#glossOverlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:12}
-#glossPanel{
-  display:none;position:fixed;right:0;top:0;bottom:0;width:min(100vw,380px);
-  background:rgba(6,14,24,.96);border-left:1px solid rgba(77,225,255,.3);
-  z-index:13;flex-direction:column;
-}
-#glossPanel[aria-hidden="false"],#glossOverlay[aria-hidden="false"]{display:flex}
-#glossPanel header{display:flex;align-items:center;justify-content:space-between;padding:14px 14px 8px;border-bottom:1px solid rgba(77,225,255,.2)}
-#glossPanel header h3{margin:0;font-size:16px;color:var(--cy);letter-spacing:.04em}
-#glossPanel header button{height:32px;padding:0 12px;font-size:13px}
-#glossBody{
-  overflow-y:auto;-webkit-overflow-scrolling:touch;padding:10px 14px 16px;
-  scrollbar-width:thin;scrollbar-color:#4de1ff rgba(4,10,18,.45);
-}
-.gloss-item{margin:0 0 12px;padding:10px 10px;border-radius:8px;background:rgba(4,10,18,.45);border:1px solid rgba(77,225,255,.12)}
-.gloss-item h4{margin:0 0 4px;font-size:14px;color:var(--am);font-weight:700}
-.gloss-item p{margin:0;font-size:13px;line-height:1.45;color:var(--tx)}
 </style></head><body>
 <canvas id="c"></canvas>
 <div class="top"><h1>WIDOW BLUE</h1><p>Chat vuota: trascina la rete · con messaggi: scorri la chat (rete ai lati e in alto)</p></div>
@@ -88,7 +71,6 @@ button.rec{border-color:var(--am);color:var(--am)}
 <button type="button" class="toggle" id="newChat">Nuova chat</button>
 <button type="button" class="toggle" id="allAgents">Tutti gli agenti: no</button>
 <button type="button" class="toggle" id="shareThread">Condividi chat</button>
-<button type="button" class="toggle" id="glossaryBtn">Glossario</button>
 </div>
 <div id="chips"></div>
 <div class="row">
@@ -100,24 +82,14 @@ button.rec{border-color:var(--am);color:var(--am)}
 <button id="go" type="button">Invia</button>
 </div></div>
 
-<div id="glossOverlay" aria-hidden="true"></div>
-<div id="glossPanel" aria-hidden="true" role="dialog" aria-label="Glossario AI">
-  <header>
-    <h3>Glossario AI</h3>
-    <button type="button" class="sec" id="glossClose">Chiudi</button>
-  </header>
-  <div id="glossBody"></div>
-</div>
-
 <div id="overlay"></div>
 <div id="panel"><h3 id="ptitle">Risultato</h3><div id="pbody"></div><div class="actions">
 <button type="button" id="pcopy">Copia</button>
 <button type="button" id="pdl" class="sec">Scarica</button>
 <button type="button" id="pclose" class="sec">Chiudi</button>
 </div></div>
-<script src="wb-api.js?v=20261004d"></script>
-<script src="wb-auth.js?v=20261004d"></script>
-<script src="wb-canvas.js?v=20261004d"></script>
-<script src="wb-glossary.js?v=20261004d"></script>
-<script src="wb-app.js?v=20261004d"></script>
+<script src="wb-api.js?v=20261004e"></script>
+<script src="wb-auth.js?v=20261004e"></script>
+<script src="wb-canvas.js?v=20261004e"></script>
+<script src="wb-app.js?v=20261004e"></script>
 </body></html>
