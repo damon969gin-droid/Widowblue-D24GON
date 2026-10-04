@@ -1,4 +1,4 @@
-/* WB canvas – starburst oro su richiesta normale (non allAgents) */
+/* WB canvas – starburst oro su richiesta normale + icosaedro pentagrammatico PH */
 (function(){
 const canvas=document.getElementById('c');
 if(!canvas) return;
@@ -21,8 +21,10 @@ for(let i=12;i<nodes.length;i++){
   const ix=kids.indexOf(i);
   if(ix>=0&&ix<kids.length-1) EDGE.push([i,kids[ix+1]]);
 }
-const IV=[[0,0,1],[0,0,-1],[1,0,0],[-1,0,0],[0,1,0],[0,-1,0],[.577,.577,.577],[-.577,.577,.577],[.577,-.577,.577],[-.577,-.577,.577],[.577,.577,-.577],[-.577,.577,-.577]];
-const FACES=[[0,6,7],[0,7,9],[0,9,8],[0,8,6],[1,10,11],[1,11,5],[6,2,10],[7,4,11]];
+const PH=(1+Math.sqrt(5))/2,IV=[];
+[[0,1,PH],[0,1,-PH],[0,-1,PH],[0,-1,-PH],[1,PH,0],[1,-PH,0],[-1,PH,0],[-1,-PH,0],[PH,0,1],[PH,0,-1],[-PH,0,1],[-PH,0,-1]].forEach(v=>{const l=Math.hypot(...v);IV.push(v.map(a=>a/l))});
+const d2=(a,b)=>(a[0]-b[0])**2+(a[1]-b[1])**2+(a[2]-b[2])**2;
+const FACES=IV.map((v,i)=>{const nb=IV.map((u,j)=>j).filter(j=>j!==i&&Math.abs(d2(IV[j],v)-4/(1+PH*PH))<.01);const u0=Math.abs(v[0])<.9?[1,0,0]:[0,1,0];let a=[v[1]*u0[2]-v[2]*u0[1],v[2]*u0[0]-v[0]*u0[2],v[0]*u0[1]-v[1]*u0[0]];const al=Math.hypot(...a)||1;a=a.map(q=>q/al);const b=[v[1]*a[2]-v[2]*a[1],v[2]*a[0]-v[0]*a[2],v[0]*a[1]-v[1]*a[0]];nb.sort((p,q)=>{const P=IV[p],Q=IV[q];return Math.atan2(P[0]*b[0]+P[1]*b[1]+P[2]*b[2],P[0]*a[0]+P[1]*a[1]+P[2]*a[2])-Math.atan2(Q[0]*b[0]+Q[1]*b[1]+Q[2]*b[2],Q[0]*a[0]+Q[1]*a[1]+Q[2]*a[2])});return nb.length>=5?[nb[0],nb[2],nb[4],nb[1],nb[3],nb[0]]:[nb[0]||0,nb[1]||0,nb[2]||0,nb[0]||0];});
 const speed=[.35,.22,.14];
 
 function resize(){W=canvas.width=window.innerWidth;H=canvas.height=window.innerHeight;cx=W/2;cy=H*0.42;R=Math.min(W,H)*0.38;}
@@ -238,14 +240,14 @@ function draw(){
   }
 
   const c1=Math.cos(yaw),s1=Math.sin(yaw),c2=Math.cos(pit),s2=Math.sin(pit);
-  const SV=IV.map(v=>{let p=v.map(a=>a*.42);p=[p[0]*c1+p[2]*s1,p[1],-p[0]*s1+p[2]*c1];p=[p[0],p[1]*c2-p[2]*s2,p[1]*s2+p[2]*c2];return proj(p)});
+  const SV=IV.map(v=>{let p=v.map(a=>a*.48);p=[p[0]*c1+p[2]*s1,p[1],-p[0]*s1+p[2]*c1];p=[p[0],p[1]*c2-p[2]*s2,p[1]*s2+p[2]*c2];return proj(p)});
   FACES.map(f=>({f,z:f.reduce((s,i)=>s+(SV[i]?SV[i][2]:0),0)})).sort((a,b)=>b.z-a.z).forEach(({f})=>{
     x.beginPath();
     f.forEach((i,k)=>{const q=SV[i];if(!q)return;k?x.lineTo(q[0],q[1]):x.moveTo(q[0],q[1]);});
     x.closePath();
     x.fillStyle=burst?'rgba(30,100,140,.14)':'rgba(40,120,150,.08)';x.fill();
-    x.strokeStyle=burst?'rgba(120,220,255,.98)':'rgba(90,200,220,.9)';
-    x.lineWidth=burst?2.9:2.5;x.globalAlpha=.96;x.stroke();
+    x.strokeStyle=burst?'rgba(120,220,255,.98)':'rgba(100,210,230,.95)';
+    x.lineWidth=burst?3.0:2.7;x.globalAlpha=.98;x.stroke();
   });
   SV.forEach(q=>{if(!q)return;x.globalAlpha=1;x.fillStyle=burst?'#a8e8ff':'#8fd4e8';x.beginPath();x.arc(q[0],q[1],2.8*q[3],0,6.283);x.fill()});
 
