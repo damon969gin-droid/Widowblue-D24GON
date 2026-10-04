@@ -6,7 +6,7 @@ import { modularSearch } from './search.js';
 import { runRAG } from './rag.js';
 import { generateImage } from './image.js';
 import { selectAgentsForTask, runAgentContributions } from './agents.js';
-import { buildContext, extractEntity, extractTopic } from './context.js';
+import { buildConversationContext } from './context.js';
 import { resolveLang, detectLang, translateText, forceLang } from './lang.js';
 import { guardInput, guardOutput, guardrailPolicy } from './guardrails.js';
 import { cacheLookup, cacheStore } from './semantic_cache.js';
@@ -37,7 +37,6 @@ export default {
       if (path === '/api/image') return await handleImage(request, env, CORS);
       if (path === '/api/orchestrate') return await handleOrchestrate(request, env, CORS);
       if (path === '/api/health') return json({ ok: true, ts: Date.now() }, 200, CORS);
-      // static / pages fallback
       if (env.ASSETS) return env.ASSETS.fetch(request);
       return json({ error: 'not_found', path }, 404, CORS);
     } catch (e) {
@@ -61,7 +60,6 @@ async function handleSearch(request, env, cors) {
   const detected = detectLang(raw);
   let searchQuery = safeQuery;
 
-  // Intent image
   if (/\b(genera|generate|crea|draw|immagine|image|foto|picture)\b/i.test(raw) && /\b(immagine|image|foto|picture|logo|icon)\b/i.test(raw)) {
     const img = await generateImage(raw, { env, lang });
     return json(
@@ -94,16 +92,14 @@ async function handleSearch(request, env, cors) {
     }
   } catch (_) {}
 
-  // Translate query toward English for better web retrieval when needed
   if (body.lang && body.lang !== 'auto' && detected !== lang && searchQuery.length > 2) {
     try {
-      const tr = await translateText(searchQuery, detected, lang === 'en' ? 'en' : 'en');
-      // keep original for answer lang; search can use EN for recall
+      await translateText(searchQuery, detected, 'en');
     } catch (_) {}
   }
 
   const history = Array.isArray(body.history) ? body.history : [];
-  const ctx = buildContext(history, searchQuery);
+  const ctx = buildConversationContext(searchQuery, history);
   const deep = body.deep !== false;
   const useRag = body.rag !== false;
 
@@ -115,7 +111,7 @@ async function handleSearch(request, env, cors) {
 
   if (useRag) {
     const data = await runRAG(searchQuery, {
-      deep: deep || pipeline.boosts.preferDeep,
+      deep: deep || (pipeline.boosts && pipeline.boosts.preferDeep),
       env,
       lang,
       history,
@@ -136,7 +132,7 @@ async function handleSearch(request, env, cors) {
     if (data.answer && data.answer.text) {
       const go = guardOutput(data.answer.text);
       data.answer.text = go.text;
-      if (go.flags.length) data.guardFlags = go.flags;
+      if (go.flags && go.flags.length) data.guardFlags = go.flags;
       try {
         await cacheStore(safeQuery, data.answer.text, { lang, env });
       } catch (_) {}
@@ -156,7 +152,7 @@ async function handleSearch(request, env, cors) {
       domains: pipeline.domains,
       agentCount: pipeline.agentCount,
       boosts: pipeline.boosts,
-      contributions: body.debugAgents ? pipeline.contributions : pipeline.contributions.slice(0, 8),
+      contributions: body.debugAgents ? pipeline.contributions : (pipeline.contributions || []).slice(0, 8),
     };
     return json(data, 200, cors);
   }
@@ -184,7 +180,7 @@ async function handleRAG(request, env, cors) {
   if (guarded.blocked) return json({ ok: false, error: 'blocked' }, 400, cors);
   const lang = resolveLang(body, raw);
   const history = Array.isArray(body.history) ? body.history : [];
-  const ctx = buildContext(history, raw);
+  const ctx = buildConversationContext(raw, history);
   const data = await runRAG(ctx.query || raw, { deep: true, env, lang, history, context: ctx });
   try {
     if (data.answer && data.answer.text && lang && lang !== 'auto') {
@@ -216,7 +212,7 @@ async function handleOrchestrate(request, env, cors) {
   if (!prompt) return json({ error: 'empty_query' }, 400, cors);
   const lang = resolveLang(body, prompt);
   const history = Array.isArray(body.history) ? body.history : [];
-  const ctx = buildContext(history, prompt);
+  const ctx = buildConversationContext(prompt, history);
   const deep = body.deep !== false;
   let search = null;
   try {
