@@ -1,6 +1,6 @@
 /**
  * WidowBlue – RAG + sintesi multilanguage
- * Chunking con overlap per retrieval più robusto.
+ * Chunking con overlap + force lingua target.
  */
 
 import { modularSearch } from './search.js';
@@ -75,14 +75,13 @@ export async function runRAG(query, opts = {}) {
 
   let cleanText = polish(generation.text, lang);
   try {
-    if (typeof forceLang === 'function') {
+    if (lang && lang !== 'auto') {
       cleanText = await forceLang(cleanText, lang);
       cleanText = polish(cleanText, lang);
-    } else {
-      const detected = detectLang(cleanText);
-      if (lang && lang !== 'auto' && detected !== lang && cleanText.length > 40) {
-        const tr = await translateText(cleanText.slice(0, 450), detected, lang);
-        if (tr && tr.length > 30) cleanText = polish(tr, lang);
+      const again = detectLang(cleanText);
+      if (again !== lang && cleanText.length > 30) {
+        cleanText = await forceLang(cleanText, lang);
+        cleanText = polish(cleanText, lang);
       }
     }
   } catch (_) {}
@@ -198,7 +197,6 @@ function chunkDocuments(docs) {
 }
 
 function splitPassages(text, maxLen) {
-  // Chunking con overlap ~15% per non spezzare contesti RAG
   if (!text) return [];
   const max = maxLen || 360;
   const overlap = Math.min(80, Math.floor(max * 0.15));
@@ -310,7 +308,11 @@ async function groundedGenerate(query, context, cited, opts) {
 
   const system =
     'Sei un assistente intelligente che risponde al cliente con un ragionamento chiaro e naturale. ' +
-    'Lingua obbligatoria: ' + langLabel + '. Scrivi TUTTA la risposta solo in ' + langLabel + ', mai in altre lingue. ' +
+    'OBBLIGO LINGUA: rispondi ESCLUSIVAMENTE in ' +
+    langLabel +
+    '. Ogni frase deve essere in ' +
+    langLabel +
+    '. Non usare altre lingue. ' +
     'REGOLE: ' +
     '1) NON copiare le fonti e NON elencare snippet web. ' +
     '2) Leggi le informazioni, ragiona e SCRIVI una risposta originale con parole tue. ' +
