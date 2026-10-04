@@ -115,7 +115,7 @@ function detectInputLang(text){
   if(/\b(o que|quando|obrigado|também)\b/i.test(t))return 'pt';
   if(/\b(wat|hoe|waar|niet|het)\b/i.test(t))return 'nl';
   if(/\b(ne|ve|bir|için|nedir)\b/i.test(t))return 'tr';
-  const it=(t.match(/\b(il|la|di|che|cosa|quando|dove|perché|ciao|sono|per|con)\b/gi)||[]).length;
+  const it=(t.match(/\b(il|la|di|che|cosa|quando|dove|perché|ciao|sono|per|con|deriva|parola)\b/gi)||[]).length;
   const en=(t.match(/\b(the|and|with|what|when|where|is|are|this|that)\b/gi)||[]).length;
   if(/[àèéìòù]/i.test(t)||it>=1)return 'it';
   if(en>=2)return 'en';
@@ -124,21 +124,31 @@ function detectInputLang(text){
 
 async function translateClient(text, from, to){
   const q=String(text||'').trim().slice(0,450);
-  if(!q||!to||to==='auto'||from===to)return q;
+  if(!q||!to||to==='auto')return q;
+  let f=String(from||'autodetect').toLowerCase();
+  const t=String(to).slice(0,2).toLowerCase();
+  if(f==='auto')f='autodetect';
+  if(f===t||(f!=='autodetect'&&f.slice(0,2)===t))return q;
   try{
-    const url='https://api.mymemory.translated.net/get?q='+encodeURIComponent(q)+'&langpair='+encodeURIComponent((from||'autodetect')+'|'+to);
+    const url='https://api.mymemory.translated.net/get?q='+encodeURIComponent(q)+'&langpair='+encodeURIComponent(f+'|'+t);
     const res=await fetch(url);
     if(!res.ok)return q;
     const data=await res.json();
     const out=(data&&data.responseData&&data.responseData.translatedText)||'';
-    if(!out||/INVALID|QUERY LENGTH|WARNING/i.test(out))return q;
-    return String(out).trim();
+    if(!out)return q;
+    const s=String(out).trim();
+    if(/PLEASE SELECT TWO DISTINCT LANGUAGES/i.test(s)||/INVALID|QUERY LENGTH|WARNING|NOT SUPPORTED/i.test(s))return q;
+    return s;
   }catch(e){return q}
 }
 
 async function clientForceLang(text, target){
   const t=String(text||'').trim();
   if(!t||!target||target==='auto') return t;
+  try{
+    const det=detectInputLang(t);
+    if(det===target) return t;
+  }catch(_e){}
   try{
     const parts=[];
     let rest=t;
@@ -152,9 +162,12 @@ async function clientForceLang(text, target){
     const out=[];
     for(const p of parts){
       const tr=await translateClient(p, 'autodetect', target);
-      out.push(tr||p);
+      if(tr && !/PLEASE SELECT TWO DISTINCT/i.test(tr)) out.push(tr);
+      else out.push(p);
     }
-    return out.join(' ').replace(/\s{2,}/g,' ').trim()||t;
+    const joined=out.join(' ').replace(/\s{2,}/g,' ').trim();
+    if(/PLEASE SELECT TWO DISTINCT/i.test(joined)) return t;
+    return joined||t;
   }catch(e){return t;}
 }
 
@@ -251,12 +264,6 @@ async function sendQuery(){
   const userDiv=document.createElement('div');
   userDiv.className='msg user';
   userDiv.innerHTML='<i>Tu</i> '+esc(displayText);
-  if(langSelVal!=='auto'&&detected!==langSelVal&&text){
-    const note=document.createElement('div');
-    note.className='atts';
-    note.textContent='Lingua risposta: '+langSelVal.toUpperCase();
-    userDiv.appendChild(note);
-  }
   if(atts.length){const ad=document.createElement('div');ad.className='atts';ad.textContent=atts.map(a=>a.name).join(', ');userDiv.appendChild(ad)}
   if(logEl){logEl.appendChild(userDiv);updateLogTouchMode();scrollLog()}
   if(window.WBNet&&window.WBNet.setRunning){
@@ -304,8 +311,14 @@ async function sendQuery(){
               const enLeak=lang==='it' && /\b(the|and|with|this|that|is|are|from|which|because|however)\b/i.test(formatted.plain);
               if(det!==lang || enLeak){
                 const forced=await clientForceLang(formatted.plain, lang);
-                if(forced && forced.length>15){
+                if(forced && forced.length>15 && !/PLEASE SELECT TWO DISTINCT/i.test(forced)){
                   formatted={plain:forced, html:'<div class="ans-text">'+esc(forced)+'</div>', imageUrl:formatted.imageUrl||null};
+                }
+              }
+              if(formatted.plain && /PLEASE SELECT TWO DISTINCT/i.test(formatted.plain)){
+                const clean=(data.answer&&data.answer.text)||'';
+                if(clean && !/PLEASE SELECT TWO DISTINCT/i.test(clean)){
+                  formatted={plain:clean, html:'<div class="ans-text">'+esc(clean)+'</div>', imageUrl:formatted.imageUrl||null};
                 }
               }
             }
