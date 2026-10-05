@@ -1,1 +1,2 @@
-force-deploy 2026-10-05T19:25Z video-detect
+force-deploy 2026-10-05T19:29:00Z
+reason: previous deploy did not start
