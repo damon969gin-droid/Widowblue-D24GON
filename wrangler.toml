@@ -33,6 +33,7 @@ binding = "ASSETS"
 #   npx wrangler secret put GOOGLE_API_KEY      # Google Custom Search JSON API
 #   npx wrangler secret put GOOGLE_CSE_ID       # Search Engine ID (cx)
 #   npx wrangler secret put TAVILY_API_KEY
+#   npx wrangler secret put EXA_API_KEY         # Exa neural search
 #   npx wrangler secret put PEPPER
 #   npx wrangler secret put PERPLEXITY_API_KEY
 #   npx wrangler secret put BRAVE_API_KEY
