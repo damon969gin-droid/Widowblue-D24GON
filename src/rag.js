@@ -1,5 +1,6 @@
 /**
  * WidowBlue – RAG + sintesi multilanguage
+ * LLM predefinito: OpenRouter (OPEN_ROUTER_API_KEY)
  * Chunking con overlap + force lingua target.
  */
 
@@ -78,199 +79,81 @@ export async function runRAG(query, opts = {}) {
     if (lang && lang !== 'auto') {
       cleanText = await forceLang(cleanText, lang);
       cleanText = polish(cleanText, lang);
-      const again = detectLang(cleanText);
-      if (again !== lang && cleanText.length > 30) {
-        cleanText = await forceLang(cleanText, lang);
-        cleanText = polish(cleanText, lang);
-      }
     }
   } catch (_) {}
 
   return {
     ok: true,
-    mode: deep ? 'deep-rag' : 'rag',
     query: q,
-    lang,
     deep,
+    lang,
     answer: {
       text: cleanText,
-      title: '',
       provider: generation.provider,
-      grounded: true,
+      grounded: generation.provider !== 'empty',
       citations: generation.citations || [],
-      url: sources[0] && sources[0].url,
     },
     rag: {
-      retrieved: docs.length,
       chunks: ranked.length,
-      queries: retrieval.queries,
-      generator: generation.provider,
-      contextChars: contextPack.length,
-      grounded: true,
-      deep,
       sources,
-      topic: convCtx && convCtx.topic,
-      domain: convCtx && convCtx.domain,
+      contextChars: contextPack.length,
     },
     search: searchPrimary,
-    webLive: !!searchPrimary.webLive,
-    providers: searchPrimary.providers,
-    results: (searchPrimary.results || docs).slice(0, deep ? 12 : 8),
-    policy: { respectful: true, grounded: true, reasoned: true },
+    results: (searchPrimary && searchPrimary.results) || docs.slice(0, 8),
     fetchedAt: Date.now(),
   };
 }
 
-async function deepRetrieve(q, { deep, env, lang }) {
-  const queries = [q];
-  for (const v of expandForIntent(q, lang)) {
-    if (!queries.includes(v) && v.length > 3) queries.push(v);
-  }
-  if (deep) {
-    for (const v of expandQueries(q, lang)) {
-      if (!queries.includes(v) && v.length > 3) queries.push(v);
-    }
-  }
-
-  const primary = await modularSearch(q, { deep: true, env, lang });
-  const docs = [...(primary.results || [])];
-  const seen = new Set(docs.map((d) => (d.url || d.title || '').toLowerCase()).filter(Boolean));
-
-  const extras = queries.slice(1, 3);
-  if (extras.length) {
-    const more = await Promise.all(
-      extras.map((qq) => modularSearch(qq, { deep: true, env, lang }).catch(() => null))
-    );
-    for (const s of more) {
-      if (!s || !s.results) continue;
-      for (const r of s.results) {
-        const k = (r.url || r.title || '').toLowerCase();
-        if (!k || seen.has(k)) continue;
-        seen.add(k);
-        docs.push(r);
-      }
-    }
-  }
-
-  return { docs, primary, queries };
-}
-
-function expandQueries(q, lang) {
-  const base = q.replace(/\?+$/, '').trim();
-  const out = [];
-  if (lang === 'it') {
-    out.push(base + ' oggi');
-    if (/quando|nato|nascita/i.test(base)) out.push(base.replace(/quando\s+/i, '') + ' data di nascita');
-    if (/chi è|chi e/i.test(base)) out.push(base.replace(/chi\s+[eè]\s+/i, '') + ' biografia');
-  } else {
-    out.push(base + ' today');
-  }
-  return out.slice(0, 2);
-}
-
-function tokenize(s) {
-  return String(s || '')
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/[^a-z0-9\s]/g, ' ')
-    .split(/\s+/)
-    .filter((t) => t.length > 2);
+async function deepRetrieve(q, opts) {
+  const primary = await modularSearch(q, opts);
+  const docs = (primary.results || []).map((r) => ({
+    title: r.title,
+    url: r.url,
+    snippet: r.snippet || r.text || '',
+    provider: r.provider,
+    kind: r.kind,
+  }));
+  return { primary, docs };
 }
 
 function chunkDocuments(docs) {
   const out = [];
-  for (const d of docs) {
-    const text = String(d.snippet || '').trim();
-    const title = d.title || '';
-    if (!text && !title) continue;
-    const parts = splitPassages(text, 360);
-    if (!parts.length && title) {
-      out.push({ text: title, title, url: d.url || '', provider: d.provider || 'unknown', kind: d.kind || 'doc' });
+  for (const d of docs || []) {
+    const raw = String(d.snippet || '').trim();
+    if (!raw) continue;
+    const size = 420;
+    const overlap = 60;
+    if (raw.length <= size) {
+      out.push({ title: d.title, url: d.url, provider: d.provider, text: raw, score: 0 });
       continue;
     }
-    for (const p of parts) {
-      out.push({ text: p, title, url: d.url || '', provider: d.provider || 'unknown', kind: d.kind || 'doc' });
+    let i = 0;
+    while (i < raw.length) {
+      const piece = raw.slice(i, i + size).trim();
+      if (piece.length > 40) {
+        out.push({ title: d.title, url: d.url, provider: d.provider, text: piece, score: 0 });
+      }
+      i += size - overlap;
+      if (out.length > 40) break;
     }
   }
   return out;
 }
 
-function splitPassages(text, maxLen) {
-  if (!text) return [];
-  const max = maxLen || 360;
-  const overlap = Math.min(80, Math.floor(max * 0.15));
-  if (text.length <= max) return [text];
-  const sentences = text.split(/(?<=[.!?。])\s+/).filter(Boolean);
-  const parts = [];
-  let buf = '';
-  for (const s of sentences) {
-    const next = buf ? buf + ' ' + s : s;
-    if (next.length > max) {
-      if (buf) parts.push(buf.trim());
-      if (buf && overlap > 0) {
-        const tail = buf.slice(-overlap);
-        buf = tail + ' ' + s;
-        if (buf.length > max) buf = s;
-      } else {
-        buf = s;
-      }
-    } else {
-      buf = next;
-    }
-  }
-  if (buf.trim()) parts.push(buf.trim());
-  const final = [];
-  for (const p of parts) {
-    if (p.length <= max) final.push(p);
-    else {
-      for (let i = 0; i < p.length; i += max - overlap) {
-        final.push(p.slice(i, i + max));
-        if (final.length >= 8) break;
-      }
-    }
-    if (final.length >= 8) break;
-  }
-  return final.slice(0, 8);
-}
-
 function rankChunks(query, chunks) {
-  const qTokens = tokenize(query);
-  if (!qTokens.length) return chunks.map((c, i) => ({ ...c, score: 1 / (i + 1) }));
-
-  const N = Math.max(chunks.length, 1);
-  const df = {};
-  for (const t of qTokens) df[t] = 0;
-  for (const c of chunks) {
-    const toks = new Set(tokenize(c.text + ' ' + c.title));
-    for (const t of qTokens) if (toks.has(t)) df[t]++;
-  }
-
-  const k1 = 1.5;
-  const b = 0.75;
-  const avgdl = chunks.reduce((s, c) => s + tokenize(c.text).length, 0) / N || 1;
-
-  const scored = chunks.map((c) => {
-    const docTokens = tokenize(c.text + ' ' + (c.title || ''));
-    const tf = {};
-    for (const t of docTokens) tf[t] = (tf[t] || 0) + 1;
-    const dl = docTokens.length || 1;
-    let score = 0;
-    for (const t of qTokens) {
-      const f = tf[t] || 0;
-      if (!f) continue;
-      const idf = Math.log(1 + (N - (df[t] || 0) + 0.5) / ((df[t] || 0) + 0.5));
-      score += idf * ((f * (k1 + 1)) / (f + k1 * (1 - b + b * (dl / avgdl))));
-    }
-    if (c.kind === 'summary') score *= 1.4;
-    if (c.provider === 'tavily' || c.provider === 'serper') score *= 1.25;
-    if (c.provider === 'wikipedia') score *= 1.15;
-    if (/classifica|standings|live/i.test((c.title || '') + (c.text || ''))) score *= 1.3;
-    return { ...c, score };
-  });
-
-  scored.sort((a, b) => b.score - a.score);
-  return scored;
+  const qTokens = String(query || '')
+    .toLowerCase()
+    .split(/\W+/)
+    .filter((t) => t.length > 2);
+  return chunks
+    .map((c) => {
+      const t = (c.text + ' ' + (c.title || '')).toLowerCase();
+      let s = 0;
+      for (const tok of qTokens) if (t.includes(tok)) s += 1;
+      c.score = s / Math.max(1, qTokens.length);
+      return c;
+    })
+    .sort((a, b) => (b.score || 0) - (a.score || 0));
 }
 
 function buildContextPack(ranked, maxChars) {
@@ -333,6 +216,16 @@ async function groundedGenerate(query, context, cited, opts) {
     langLabel +
     ', rivolta al cliente, in linguaggio naturale:';
 
+  // OpenRouter predefinito (OPEN_ROUTER_API_KEY)
+  if (env.OPEN_ROUTER_API_KEY && context.length > 40) {
+    try {
+      const text = await generateWithOpenRouter(env.OPEN_ROUTER_API_KEY, system, userMsg, env.OPENROUTER_MODEL);
+      if (text && text.length > 25) {
+        return { text: polish(text, lang), provider: 'openrouter', title: '', citations: cited.map((c) => c.id) };
+      }
+    } catch (e) {}
+  }
+
   if (env.AI && context.length > 40) {
     try {
       const text = await generateWithWorkersAI(env.AI, system, userMsg);
@@ -353,6 +246,19 @@ async function groundedGenerate(query, context, cited, opts) {
 
   const synth = synthesizeAnswer(query, cited, opts.priorAnswer, lang);
   if (synth && synth.length > 20) {
+    if (env.OPEN_ROUTER_API_KEY && context.length > 40) {
+      try {
+        const refined = await generateWithOpenRouter(
+          env.OPEN_ROUTER_API_KEY,
+          system + ' Riscrivi la bozza in forma piu naturale e ragionata, senza copiare:',
+          'Domanda: ' + query + '\n\nBozza:\n' + synth + '\n\nRisposta riscritta in ' + langLabel + ':',
+          env.OPENROUTER_MODEL
+        );
+        if (refined && refined.length > 15) {
+          return { text: polish(refined, lang), provider: 'openrouter', title: '', citations: cited.map((c) => c.id) };
+        }
+      } catch (e) {}
+    }
     if (env.AI && context.length > 40) {
       try {
         const refined = await generateWithWorkersAI(
@@ -373,6 +279,37 @@ async function groundedGenerate(query, context, cited, opts) {
   }
 
   return { text: noAnswerMsg(lang), provider: 'empty', title: '', citations: [] };
+}
+
+async function generateWithOpenRouter(apiKey, system, user, model) {
+  const m = String(model || '').trim() || 'google/gemini-2.0-flash-exp:free';
+  const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      Authorization: 'Bearer ' + apiKey,
+      'Content-Type': 'application/json',
+      Accept: 'application/json',
+      'HTTP-Referer': 'https://widowblue.app',
+      'X-Title': 'WidowBlue',
+    },
+    body: JSON.stringify({
+      model: m,
+      messages: [
+        { role: 'system', content: system },
+        { role: 'user', content: user },
+      ],
+      temperature: 0.35,
+      max_tokens: 1200,
+    }),
+  });
+  if (!res.ok) {
+    const errBody = await res.text().catch(() => '');
+    throw new Error('openrouter ' + res.status + ' ' + String(errBody).slice(0, 120));
+  }
+  const data = await res.json();
+  return ((data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content) || '')
+    .trim()
+    .slice(0, 2400);
 }
 
 async function generateWithWorkersAI(AI, system, user) {
