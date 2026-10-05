@@ -1,4 +1,4 @@
-/* WidowBlue app – chat, voice, upload, agents, image, video, history, multi-lang */
+/* WidowBlue app – chat, voice, upload, agents, image, video poll, multi-lang */
 
 const logEl=document.getElementById('log');
 const qEl=document.getElementById('q');
@@ -20,7 +20,6 @@ let allAgents=false;
 try{allAgents=localStorage.getItem('wb_all_agents')==='1'}catch(e){}
 
 function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')}
-
 function updateLogTouchMode(){
   if(!logEl)return;
   const has=logEl.querySelector('.msg');
@@ -28,7 +27,6 @@ function updateLogTouchMode(){
   else{logEl.classList.add('empty');logEl.classList.remove('has-msgs')}
 }
 function scrollLog(){if(logEl)logEl.scrollTop=logEl.scrollHeight}
-
 function pushMemory(role,text,entity,topic){
   chatMemory.push({role,text:String(text||'').slice(0,2000),entity:entity||null,topic:topic||null,at:Date.now()});
   if(chatMemory.length>40)chatMemory=chatMemory.slice(-40);
@@ -82,32 +80,25 @@ function appendReply(body){
   actions.className='msg-actions';
   const copyBtn=document.createElement('button');
   copyBtn.type='button'; copyBtn.className='sec'; copyBtn.textContent='Copia';
-  copyBtn.onclick=async()=>{
-    try{
-      await navigator.clipboard.writeText(plain||content.innerText||'');
-      copyBtn.textContent='Copiato';
-      setTimeout(()=>copyBtn.textContent='Copia',1200);
-    }catch(e){}
-  };
+  copyBtn.onclick=async()=>{try{await navigator.clipboard.writeText(plain||content.innerText||'');copyBtn.textContent='Copiato';setTimeout(()=>copyBtn.textContent='Copia',1200)}catch(e){}};
   const shareBtn=document.createElement('button');
   shareBtn.type='button'; shareBtn.className='sec'; shareBtn.textContent='Condividi';
   shareBtn.onclick=()=>shareText('Widow Blue',plain||content.innerText||'',shareBtn);
   actions.appendChild(copyBtn); actions.appendChild(shareBtn);
   d.appendChild(actions);
   if(logEl){logEl.appendChild(d);updateLogTouchMode();scrollLog()}
-  threadMessages.push({role:'assistant',plain:plain,html:html,imageUrl:imageUrl,videoUrl:videoUrl,at:Date.now()});
+  threadMessages.push({role:'assistant',plain,html,imageUrl,videoUrl,at:Date.now()});
 }
 
 async function shareText(title,text,btn){
   try{
     if(navigator.share){await navigator.share({title,text});return}
     await navigator.clipboard.writeText(text);
-    if(btn){btn.textContent='Copiato'; setTimeout(()=>btn.textContent='Condividi',1200)}
+    if(btn){btn.textContent='Copiato';setTimeout(()=>btn.textContent='Condividi',1200)}
   }catch(e){}
 }
 
-const LANGS=[['it','IT'],['en','EN'],['es','ES'],['fr','FR'],['de','DE'],['pt','PT'],
-  ['ja','JA'],['zh','ZH'],['ko','KO'],['ar','AR'],['ru','RU'],['hi','HI'],['tr','TR'],['nl','NL'],['pl','PL'],['auto','AUTO']];
+const LANGS=[['it','IT'],['en','EN'],['es','ES'],['fr','FR'],['de','DE'],['pt','PT'],['ja','JA'],['zh','ZH'],['ko','KO'],['ar','AR'],['ru','RU'],['hi','HI'],['tr','TR'],['nl','NL'],['pl','PL'],['auto','AUTO']];
 
 function detectInputLang(text){
   const t=String(text||'');
@@ -118,15 +109,12 @@ function detectInputLang(text){
   if(/[\u0600-\u06ff]/.test(t))return 'ar';
   if(/[\u0900-\u097f]/.test(t))return 'hi';
   if(/[\u0400-\u04ff]/.test(t))return /[іїєґ]/i.test(t)?'uk':'ru';
-  if(/[ąćęłńóśźż]/i.test(t)||/\b(co|jak|gdzie|jest|nie|czy|oraz)\b/i.test(t))return 'pl';
-  if(/[äöüß]/i.test(t)||/\b(was|wann|wie|nicht|der|die|das)\b/i.test(t))return 'de';
-  if(/[ñ¿¡]/i.test(t)||/\b(qué|cuando|hola|está)\b/i.test(t))return 'es';
-  if(/\b(quoi|quand|bonjour|avec|pour)\b/i.test(t))return 'fr';
-  if(/\b(o que|quando|obrigado|também)\b/i.test(t))return 'pt';
-  if(/\b(wat|hoe|waar|niet|het)\b/i.test(t))return 'nl';
-  if(/\b(ne|ve|bir|için|nedir)\b/i.test(t))return 'tr';
-  const it=(t.match(/\b(il|la|di|che|cosa|quando|dove|perché|ciao|sono|per|con|deriva|parola)\b/gi)||[]).length;
-  const en=(t.match(/\b(the|and|with|what|when|where|is|are|this|that)\b/gi)||[]).length;
+  if(/[ąćęłńóśźż]/i.test(t)||/\b(co|jak|gdzie|jest|nie)\b/i.test(t))return 'pl';
+  if(/[äöüß]/i.test(t)||/\b(was|wann|wie|nicht)\b/i.test(t))return 'de';
+  if(/[ñ¿¡]/i.test(t)||/\b(qué|cuando|hola)\b/i.test(t))return 'es';
+  if(/\b(quoi|quand|bonjour)\b/i.test(t))return 'fr';
+  const it=(t.match(/\b(il|la|di|che|cosa|quando|ciao|sono|video|genera)\b/gi)||[]).length;
+  const en=(t.match(/\b(the|and|with|what|when|is|are)\b/gi)||[]).length;
   if(/[àèéìòù]/i.test(t)||it>=1)return 'it';
   if(en>=2)return 'en';
   return 'it';
@@ -147,7 +135,7 @@ async function translateClient(text, from, to){
     const out=(data&&data.responseData&&data.responseData.translatedText)||'';
     if(!out)return q;
     const s=String(out).trim();
-    if(/PLEASE SELECT TWO DISTINCT LANGUAGES/i.test(s)||/INVALID|QUERY LENGTH|WARNING|NOT SUPPORTED/i.test(s))return q;
+    if(/PLEASE SELECT TWO DISTINCT LANGUAGES/i.test(s)||/INVALID|WARNING|NOT SUPPORTED/i.test(s))return q;
     return s;
   }catch(e){return q}
 }
@@ -155,36 +143,26 @@ async function translateClient(text, from, to){
 async function clientForceLang(text, target){
   const t=String(text||'').trim();
   if(!t||!target||target==='auto') return t;
+  try{if(detectInputLang(t)===target) return t}catch(_e){}
   try{
-    const det=detectInputLang(t);
-    if(det===target) return t;
-  }catch(_e){}
-  try{
-    const parts=[];
-    let rest=t;
+    const parts=[]; let rest=t;
     while(rest.length){
       let cut=Math.min(420,rest.length);
       if(cut<rest.length){const sp=rest.lastIndexOf('. ',cut);const sp2=rest.lastIndexOf(' ',cut);if(sp>100)cut=sp+1;else if(sp2>100)cut=sp2;}
-      parts.push(rest.slice(0,cut).trim());
-      rest=rest.slice(cut).trimStart();
+      parts.push(rest.slice(0,cut).trim()); rest=rest.slice(cut).trimStart();
       if(parts.length>=8){if(rest)parts[parts.length-1]+=' '+rest;break;}
     }
     const out=[];
-    for(const p of parts){
-      const tr=await translateClient(p, 'autodetect', target);
-      if(tr && !/PLEASE SELECT TWO DISTINCT/i.test(tr)) out.push(tr);
-      else out.push(p);
-    }
+    for(const p of parts){const tr=await translateClient(p,'autodetect',target); out.push(tr&&!/PLEASE SELECT TWO DISTINCT/i.test(tr)?tr:p)}
     const joined=out.join(' ').replace(/\s{2,}/g,' ').trim();
-    if(/PLEASE SELECT TWO DISTINCT/i.test(joined)) return t;
-    return joined||t;
-  }catch(e){return t;}
+    return /PLEASE SELECT TWO DISTINCT/i.test(joined)?t:(joined||t);
+  }catch(e){return t}
 }
 
 const langSel=document.getElementById('lang');
 if(langSel){
   LANGS.forEach(([v,l])=>{const o=document.createElement('option');o.value=v;o.textContent=l;langSel.appendChild(o)});
-  try{const sl=localStorage.getItem('wb_lang');langSel.value=sl||'it'}catch(e){try{langSel.value='it'}catch(_){}}
+  try{langSel.value=localStorage.getItem('wb_lang')||'it'}catch(e){try{langSel.value='it'}catch(_){}}
   langSel.onchange=()=>{try{localStorage.setItem('wb_lang',langSel.value)}catch(e){}};
 }
 function currentLang(){return (langSel&&langSel.value)||'it'}
@@ -193,7 +171,7 @@ function applyAllAgentsVisual(on){
   try{
     window.allMode=!!on;
     if(window.WBNet&&typeof window.WBNet.setAllMode==='function') window.WBNet.setAllMode(!!on);
-    else { window.WBNet=window.WBNet||{}; window.WBNet.allMode=!!on; window.allMode=!!on; }
+    else {window.WBNet=window.WBNet||{}; window.WBNet.allMode=!!on; window.allMode=!!on}
   }catch(e){}
 }
 if(allAgentsBtn){
@@ -208,20 +186,12 @@ if(allAgentsBtn){
   };
 }
 setTimeout(()=>applyAllAgentsVisual(allAgents),0);
-applyAllAgentsVisual(allAgents);
 
 if(clipBtn&&fileInput){
   clipBtn.onclick=()=>fileInput.click();
   fileInput.onchange=()=>{
     files=Array.from(fileInput.files||[]);
-    if(chipsEl){
-      chipsEl.innerHTML='';
-      files.forEach((f,i)=>{
-        const c=document.createElement('span');c.className='chip';c.textContent=f.name;
-        c.onclick=()=>{files.splice(i,1);fileInput.value='';fileInput.onchange()};
-        chipsEl.appendChild(c);
-      });
-    }
+    if(chipsEl){chipsEl.innerHTML='';files.forEach((f,i)=>{const c=document.createElement('span');c.className='chip';c.textContent=f.name;c.onclick=()=>{files.splice(i,1);fileInput.value='';fileInput.onchange()};chipsEl.appendChild(c)})}
   };
 }
 
@@ -230,12 +200,10 @@ if(voiceBtn&&(window.SpeechRecognition||window.webkitSpeechRecognition)){
   let recognition=null;
   voiceBtn.onclick=()=>{
     if(!recognition){
-      recognition=new SR();
-      recognition.continuous=false; recognition.interimResults=false;
-      const vl=currentLang();
+      recognition=new SR(); recognition.continuous=false; recognition.interimResults=false;
       const voiceMap={it:'it-IT',en:'en-US',es:'es-ES',fr:'fr-FR',de:'de-DE',pt:'pt-PT',pl:'pl-PL',nl:'nl-NL'};
-      recognition.lang=voiceMap[vl]||(vl==='auto'?'it-IT':vl);
-      recognition.onresult=(ev)=>{const t=ev.results[0][0].transcript; if(qEl)qEl.value=t; voiceBtn.classList.remove('rec');};
+      recognition.lang=voiceMap[currentLang()]||'it-IT';
+      recognition.onresult=(ev)=>{if(qEl)qEl.value=ev.results[0][0].transcript; voiceBtn.classList.remove('rec')};
       recognition.onerror=()=>voiceBtn.classList.remove('rec');
       recognition.onend=()=>voiceBtn.classList.remove('rec');
     }
@@ -243,121 +211,87 @@ if(voiceBtn&&(window.SpeechRecognition||window.webkitSpeechRecognition)){
   };
 }
 
-if(newChatBtn){
-  newChatBtn.onclick=()=>{
-    threadMessages=[]; chatMemory=[]; lastResult='';
-    if(logEl){logEl.innerHTML='';updateLogTouchMode()}
-    if(window.WBNet&&window.WBNet.setRunning) window.WBNet.setRunning(false);
-  };
-}
-if(shareThreadBtn){
-  shareThreadBtn.onclick=()=>{
-    const text=threadMessages.map(m=>m.role==='user'?('Tu: '+(m.text||'')):'WB: '+(m.plain||m.text||'')).join('\n\n');
-    shareText('Widow Blue chat', text||lastResult||'', shareThreadBtn);
-  };
-}
+if(newChatBtn){newChatBtn.onclick=()=>{threadMessages=[];chatMemory=[];lastResult='';if(logEl){logEl.innerHTML='';updateLogTouchMode()}if(window.WBNet&&window.WBNet.setRunning)window.WBNet.setRunning(false)}};
+if(shareThreadBtn){shareThreadBtn.onclick=()=>{const text=threadMessages.map(m=>m.role==='user'?('Tu: '+(m.text||'')):'WB: '+(m.plain||m.text||'')).join('\n\n');shareText('Widow Blue chat',text||lastResult||'',shareThreadBtn)}};
 
 async function sendQuery(){
   if(appBusy)return;
   const text=(qEl&&qEl.value||'').trim();
   const atts=files.slice();
   if(!text&&!atts.length)return;
-  appBusy=true;
-  if(goBtn)goBtn.disabled=true;
-  if(qEl)qEl.value='';
-
+  appBusy=true; if(goBtn)goBtn.disabled=true; if(qEl)qEl.value='';
   const langSelVal=currentLang();
   const detected=detectInputLang(text||'');
-  let displayText=text||'(allegati)';
-  let queryForApi=text;
-
+  const displayText=text||'(allegati)';
   const userDiv=document.createElement('div');
   userDiv.className='msg user';
   userDiv.innerHTML='<i>Tu</i> '+esc(displayText);
-  if(atts.length){const ad=document.createElement('div');ad.className='atts';ad.textContent=atts.map(a=>a.name).join(', ');userDiv.appendChild(ad)}
   if(logEl){logEl.appendChild(userDiv);updateLogTouchMode();scrollLog()}
-  if(window.WBNet&&window.WBNet.setRunning){
-    window.WBNet.setRunning(true);
-  }else if(window.WBNet&&window.WBNet.ignite){
-    window.running=true;
-    window.WBNet.ignite();
-  }
-  threadMessages.push({role:'user',text:displayText,original:text,at:Date.now()});
+  if(window.WBNet&&window.WBNet.setRunning) window.WBNet.setRunning(true);
+  else if(window.WBNet&&window.WBNet.ignite){window.running=true;window.WBNet.ignite()}
+  threadMessages.push({role:'user',text:displayText,at:Date.now()});
   pushMemory('user',displayText);
-
   const lang=langSelVal==='auto'?detected:langSelVal;
   const history=chatMemory.slice(-28).map(m=>({role:m.role,text:m.text,entity:m.entity||null,topic:m.topic||null}));
   try{
     if(typeof WB!=='undefined'&&WB.api){
-      const body={
-        query:queryForApi||text,
-        prompt:queryForApi||text,
-        deep:true,
-        lang,
-        history,
-        allAgents:allAgents,
-        attachments:atts.map(a=>({name:a.name,type:a.type,size:a.size}))
-      };
+      const body={query:text,prompt:text,deep:true,lang,history,allAgents:allAgents,attachments:atts.map(a=>({name:a.name,type:a.type,size:a.size}))};
       let data=null;
-      try{
-        data=await WB.api('/api/search',{method:'POST',body:JSON.stringify(body)});
-      }catch(e1){
-        try{
-          data=await WB.api('/api/orchestrate',{method:'POST',body:JSON.stringify(body)});
-          if(data&&data.search)data=data.search;
-        }catch(e2){data=null}
-      }
+      try{data=await WB.api('/api/search',{method:'POST',body:JSON.stringify(body)})}
+      catch(e1){try{data=await WB.api('/api/orchestrate',{method:'POST',body:JSON.stringify(body)});if(data&&data.search)data=data.search}catch(e2){data=null}}
       if(data&&data.ok!==false){
-        if(data.mode==='video'||(data.video&&(data.video.url||data.video.project))){
-          const msg=(data.answer&&data.answer.text)||(data.video&&data.video.message)||'Video in elaborazione.';
-          const url=data.videoUrl||(data.video&&(data.video.url||data.video.videoUrl))||null;
-          appendReply({plain:msg,html:'<div class="ans-text">'+esc(msg)+'</div>',videoUrl:url});
+        if(data.mode==='video'||(data.video&&(data.video.url||data.video.project||data.video.error))){
+          let msg=(data.answer&&data.answer.text)||(data.video&&data.video.message)||'Video in elaborazione.';
+          let url=data.videoUrl||(data.video&&(data.video.url||data.video.videoUrl))||null;
+          const project=(data.video&&data.video.project)||data.project||null;
+          if(data.video&&data.video.error==='missing_json2video_key'){
+            appendReply({plain:msg,html:'<div class="ans-text">'+esc(msg)+'</div>',videoUrl:null});
+          }else if(!url && project){
+            appendReply({plain:msg+' Attendo il render…',html:'<div class="ans-text">'+esc(msg)+' <i>Attendo il render…</i></div>',videoUrl:null});
+            for(let i=0;i<18 && !url;i++){
+              await new Promise(r=>setTimeout(r,5000));
+              try{
+                const st=await WB.api('/api/video/status?project='+encodeURIComponent(project),{method:'GET'});
+                if(st&&st.status==='done'&&(st.url||st.videoUrl)){url=st.url||st.videoUrl;msg=lang==='it'?'Video pronto.':'Video ready.';break}
+                if(st&&(st.status==='error'||st.status==='timeout')){msg=st.message||'Errore render video.';break}
+              }catch(_e){}
+            }
+            if(url) appendReply({plain:msg,html:'<div class="ans-text">'+esc(msg)+'</div>',videoUrl:url});
+            else appendReply({plain:msg.includes('Errore')?msg:('Video ancora in elaborazione. ID: '+project),html:'<div class="ans-text">'+esc(msg.includes('Errore')?msg:('Video ancora in elaborazione. ID: '+project))+'</div>',videoUrl:null});
+          }else{
+            appendReply({plain:msg,html:'<div class="ans-text">'+esc(msg)+'</div>',videoUrl:url});
+          }
           pushMemory('assistant',msg,null,null);
         }else if(data.mode==='image'||(data.image&&data.image.url)){
           const msg=(data.answer&&data.answer.text)||(data.image&&data.image.message)||'Immagine generata.';
           const url=(data.image&&(data.image.url||data.image.imageUrl))||data.imageUrl;
           appendReply({plain:msg,html:'<div class="ans-text">'+esc(msg)+'</div>',imageUrl:url});
-          pushMemory('assistant',msg,data.contextEntity||null,data.contextTopic||null);
+          pushMemory('assistant',msg,null,null);
         }else{
           let formatted=formatSearchAnswer(data);
           try{
-            if(lang && lang!=='auto' && formatted && formatted.plain && formatted.plain.length>20){
+            if(lang&&lang!=='auto'&&formatted&&formatted.plain&&formatted.plain.length>20){
               const det=detectInputLang(formatted.plain);
-              const enLeak=lang==='it' && /\b(the|and|with|this|that|is|are|from|which|because|however)\b/i.test(formatted.plain);
-              if(det!==lang || enLeak){
-                const forced=await clientForceLang(formatted.plain, lang);
-                if(forced && forced.length>15 && !/PLEASE SELECT TWO DISTINCT/i.test(forced)){
-                  formatted={plain:forced, html:'<div class="ans-text">'+esc(forced)+'</div>', imageUrl:formatted.imageUrl||null};
-                }
-              }
-              if(formatted.plain && /PLEASE SELECT TWO DISTINCT/i.test(formatted.plain)){
-                const clean=(data.answer&&data.answer.text)||'';
-                if(clean && !/PLEASE SELECT TWO DISTINCT/i.test(clean)){
-                  formatted={plain:clean, html:'<div class="ans-text">'+esc(clean)+'</div>', imageUrl:formatted.imageUrl||null};
-                }
+              const enLeak=lang==='it'&&/\b(the|and|with|this|that|is|are)\b/i.test(formatted.plain);
+              if(det!==lang||enLeak){
+                const forced=await clientForceLang(formatted.plain,lang);
+                if(forced&&forced.length>15&&!/PLEASE SELECT TWO DISTINCT/i.test(forced))
+                  formatted={plain:forced,html:'<div class="ans-text">'+esc(forced)+'</div>',imageUrl:null};
               }
             }
           }catch(_e){}
           appendReply(formatted);
-          pushMemory('assistant',formatted.plain,data.contextEntity||data.contextTopic||null,data.contextTopic||null);
+          pushMemory('assistant',formatted.plain,data.contextEntity||null,data.contextTopic||null);
         }
       }else{
-        appendReply({plain:'Non è stato possibile completare la ricerca. Riprova.',html:null});
+        const errMsg=(data&&data.video&&data.video.message)||(data&&data.message)||'Non è stato possibile completare. Riprova.';
+        appendReply({plain:errMsg,html:null});
       }
-    }else{
-      appendReply({plain:'API non disponibile.',html:null});
-    }
-  }catch(err){
-    appendReply({plain:'Errore di rete. Riprova.',html:null});
-  }
-  if(window.WBNet&&window.WBNet.setRunning){
-    window.WBNet.setRunning(false);
-  }else{
-    window.running=false;
-  }
-  appBusy=false;
-  if(goBtn)goBtn.disabled=false;
-  scrollLog();
+    }else appendReply({plain:'API non disponibile.',html:null});
+  }catch(err){appendReply({plain:'Errore di rete. Riprova.',html:null})}
+  if(window.WBNet&&window.WBNet.setRunning) window.WBNet.setRunning(false);
+  else window.running=false;
+  appBusy=false; if(goBtn)goBtn.disabled=false; scrollLog();
 }
 
 if(goBtn)goBtn.onclick=sendQuery;
