@@ -1,6 +1,6 @@
 /**
  * WidowBlue – ricerca web modulare multi-provider
- * Provider: Google CSE, Serper, Tavily, Exa, Wikipedia, DuckDuckGo, Brave, Bing, Perplexity
+ * Provider predefinito: Exa (poi Google CSE, Serper, Tavily, Wikipedia, …)
  */
 
 const UA =
@@ -29,8 +29,8 @@ function scoreResult(r, qTokens) {
   const sn = String(r.snippet || '').toLowerCase();
   let score = 0;
   if (r.kind === 'summary') score += 20;
+  if (r.provider === 'exa') score += r.kind === 'summary' ? 70 : 45;
   if (r.provider === 'tavily') score += r.kind === 'summary' ? 50 : 25;
-  if (r.provider === 'exa') score += r.kind === 'summary' ? 54 : 32;
   if (r.provider === 'serper') score += r.kind === 'summary' ? 52 : 28;
   if (r.provider === 'google') score += r.kind === 'summary' ? 55 : 30;
   if (r.provider === 'perplexity') score += r.kind === 'summary' ? 40 : 15;
@@ -68,6 +68,17 @@ function focusAnswer(query, text, title) {
 }
 
 function pickBestAnswer(unique, q) {
+  // Exa predefinito: priorità assoluta
+  const exaSummary = unique.find(
+    (r) => r.provider === 'exa' && r.kind === 'summary' && r.snippet && r.snippet.length > 20
+  );
+  if (exaSummary) {
+    return { text: focusAnswer(q, exaSummary.snippet, exaSummary.title), title: exaSummary.title, url: exaSummary.url, provider: 'exa' };
+  }
+  const exaHit = unique.find((r) => r.provider === 'exa' && r.snippet && r.snippet.length > 40);
+  if (exaHit) {
+    return { text: focusAnswer(q, exaHit.snippet, exaHit.title), title: exaHit.title, url: exaHit.url, provider: 'exa' };
+  }
   const googleLike = unique.find(
     (r) => (r.provider === 'google' || r.provider === 'serper') && r.kind === 'summary' && r.snippet && r.snippet.length > 20
   );
@@ -121,6 +132,10 @@ export async function modularSearch(query, opts = {}) {
   const errors = [];
 
   const jobs = [];
+  // Exa predefinito: avviato per primo
+  if (env.EXA_API_KEY) {
+    jobs.push(runProvider('exa', () => searchExa(q, env.EXA_API_KEY, deep ? 12 : 8)));
+  }
   if (env.GOOGLE_API_KEY && env.GOOGLE_CSE_ID) {
     jobs.push(runProvider('google', () => searchGoogle(q, env.GOOGLE_API_KEY, env.GOOGLE_CSE_ID, deep ? 10 : 8)));
   }
@@ -129,9 +144,6 @@ export async function modularSearch(query, opts = {}) {
   }
   if (env.TAVILY_API_KEY) {
     jobs.push(runProvider('tavily', () => searchTavily(q, env.TAVILY_API_KEY, deep)));
-  }
-  if (env.EXA_API_KEY) {
-    jobs.push(runProvider('exa', () => searchExa(q, env.EXA_API_KEY, deep ? 10 : 6)));
   }
   jobs.push(runProvider('wikipedia', () => searchWikipedia(q, qNorm, qTokens, lang)));
   jobs.push(runProvider('duckduckgo', () => searchDuckDuckGo(qNorm || q)));
@@ -185,7 +197,7 @@ export async function modularSearch(query, opts = {}) {
     results: unique.map(({ _score, ...rest }) => rest),
     policy: {
       respectful: true,
-      notes: ['Priorità Google CSE / Serper / Exa', 'Lingua: ' + lang, 'Filtro pertinenza attivo'],
+      notes: ['Priorità Exa (predefinito)', 'Fallback: Google CSE / Serper / Tavily', 'Lingua: ' + lang],
     },
     fetchedAt: Date.now(),
   };
@@ -452,7 +464,7 @@ async function searchPerplexity(q, apiKey, deep, lang = 'it') {
       'User-Agent': UA,
     },
     body: JSON.stringify({
-      model: deep ? 'sonar' : 'sonar',
+      model: 'sonar',
       messages: [
         {
           role: 'system',
