@@ -64,7 +64,7 @@ async function handleSearch(request, env, cors) {
   let searchQuery = safeQuery;
 
   if (isVideoRequest(raw)) {
-    const vid = await generateVideo(raw, { env, lang, wait: true });
+    const vid = await generateVideo(raw, { env, lang, wait: false });
     return json(
       {
         ok: !!vid.ok,
@@ -228,7 +228,7 @@ async function handleVideo(request, env, cors) {
   const vid = await generateVideo(prompt || 'video', {
     env,
     lang,
-    wait: body.wait !== false,
+    wait: body.wait === true,
     movieJson: movieJson || undefined,
     maxPolls: body.maxPolls,
   });
