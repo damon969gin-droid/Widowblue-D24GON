@@ -1,4 +1,4 @@
-/* WidowBlue app – chat, voice, upload, agents, image, history, multi-lang */
+/* WidowBlue app – chat, voice, upload, agents, image, video, history, multi-lang */
 
 const logEl=document.getElementById('log');
 const qEl=document.getElementById('q');
@@ -55,6 +55,7 @@ function appendReply(body){
   const html=typeof body==='object'?body.html:null;
   const plain=typeof body==='object'?body.plain:String(body||'');
   const imageUrl=typeof body==='object'?body.imageUrl:null;
+  const videoUrl=typeof body==='object'?body.videoUrl:null;
   lastResult=plain||'';
   const d=document.createElement('div');
   d.className='msg reply';
@@ -63,7 +64,16 @@ function appendReply(body){
   if(html) content.innerHTML=html;
   else content.textContent=plain;
   d.appendChild(content);
-  if(imageUrl){
+  if(videoUrl){
+    const v=document.createElement('video');
+    v.className='gen-video'; v.src=videoUrl; v.controls=true; v.playsInline=true;
+    v.style.maxWidth='100%'; v.style.borderRadius='8px'; v.style.marginTop='8px';
+    d.appendChild(v);
+    const a=document.createElement('a');
+    a.href=videoUrl; a.target='_blank'; a.rel='noopener'; a.textContent='Apri video';
+    a.style.display='inline-block'; a.style.marginTop='6px'; a.style.color='var(--cy)';
+    d.appendChild(a);
+  } else if(imageUrl){
     const img=document.createElement('img');
     img.className='gen-img'; img.src=imageUrl; img.alt='generated';
     d.appendChild(img);
@@ -85,7 +95,7 @@ function appendReply(body){
   actions.appendChild(copyBtn); actions.appendChild(shareBtn);
   d.appendChild(actions);
   if(logEl){logEl.appendChild(d);updateLogTouchMode();scrollLog()}
-  threadMessages.push({role:'assistant',plain:plain,html:html,imageUrl:imageUrl,at:Date.now()});
+  threadMessages.push({role:'assistant',plain:plain,html:html,imageUrl:imageUrl,videoUrl:videoUrl,at:Date.now()});
 }
 
 async function shareText(title,text,btn){
@@ -298,7 +308,12 @@ async function sendQuery(){
         }catch(e2){data=null}
       }
       if(data&&data.ok!==false){
-        if(data.mode==='image'||(data.image&&data.image.url)){
+        if(data.mode==='video'||(data.video&&(data.video.url||data.video.project))){
+          const msg=(data.answer&&data.answer.text)||(data.video&&data.video.message)||'Video in elaborazione.';
+          const url=data.videoUrl||(data.video&&(data.video.url||data.video.videoUrl))||null;
+          appendReply({plain:msg,html:'<div class="ans-text">'+esc(msg)+'</div>',videoUrl:url});
+          pushMemory('assistant',msg,null,null);
+        }else if(data.mode==='image'||(data.image&&data.image.url)){
           const msg=(data.answer&&data.answer.text)||(data.image&&data.image.message)||'Immagine generata.';
           const url=(data.image&&(data.image.url||data.image.imageUrl))||data.imageUrl;
           appendReply({plain:msg,html:'<div class="ans-text">'+esc(msg)+'</div>',imageUrl:url});
