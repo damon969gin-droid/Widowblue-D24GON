@@ -1,20 +1,17 @@
 /**
- * WidowBlue – generazione video via JSON2Video
- * Secret: JSON2VIDEO_API_KEY (o J2V_API_KEY)
+ * WidowBlue – generazione video via JSON2Video (solo testo)
+ * Secret: JSON2VIDEO_API_KEY
  */
 
 export function isVideoRequest(prompt) {
   const t = String(prompt || '').toLowerCase();
-  // Parole esplicite video
   if (/\b(video|filmato|videoclip|reel|short|movie|clip)\b/i.test(t)) return true;
-  // Genera/crea + animazione / motion / scritta animata
   if (
     /\b(genera|generami|crea|creami|fai|make|generate|create|realizza)\b/i.test(t) &&
     /\b(animat[oaie]|animazione|motion\s*graphics?|logo\s*animat|testo\s*animat|scritta\s*animat|tipo\s*cinetico)\b/i.test(t)
   ) {
     return true;
   }
-  // genera/crea + scritta/testo + (appare|animat|schermo)
   if (
     /\b(genera|crea|fai|make|generate)\b/i.test(t) &&
     /\b(scritta|testo|titolo)\b/i.test(t) &&
@@ -35,6 +32,7 @@ export function extractVideoPrompt(prompt) {
       ''
     )
     .replace(/^(un[oa]?\s+)?(video|clip|movie|filmato)\s*(animat[oaie]?\s*)?(di|of|about|su|per|:)?\s*/i, '')
+    .replace(/\b(con\s+solo\s+testo|solo\s+testo|only\s+text)\b/gi, '')
     .trim();
   const quoted = s.match(/["«]([^"»]{2,120})["»]/);
   if (quoted) return quoted[1].trim().slice(0, 100);
@@ -55,19 +53,30 @@ function getApiKey(env) {
   );
 }
 
+/** Video full-hd: solo testo ciano su sfondo scuro */
 function buildMovieJson(text) {
   const title = String(text || 'WidowBlue').slice(0, 100);
   return {
     resolution: 'full-hd',
+    quality: 'high',
     scenes: [
       {
-        duration: 6,
+        duration: 7,
+        'background-color': '#040a12',
         elements: [
           {
             type: 'text',
             text: title,
+            duration: 7,
             style: '001',
-            duration: 6,
+            'font-size': 72,
+            'font-color': '#4de1ff',
+            'font-family': 'Roboto',
+            'text-align': 'center',
+            x: 0,
+            y: 0,
+            width: '100%',
+            height: '100%',
           },
         ],
       },
@@ -85,8 +94,8 @@ export async function generateVideo(prompt, opts = {}) {
       error: 'missing_json2video_key',
       message:
         lang === 'it'
-          ? 'Secret JSON2VIDEO_API_KEY mancante su Cloudflare Pages (Settings → Variables and Secrets). Nome esatto: JSON2VIDEO_API_KEY'
-          : 'Missing JSON2VIDEO_API_KEY secret on Cloudflare Pages.',
+          ? 'Secret JSON2VIDEO_API_KEY mancante su Cloudflare.'
+          : 'Missing JSON2VIDEO_API_KEY secret.',
     };
   }
 
@@ -132,43 +141,6 @@ export async function generateVideo(prompt, opts = {}) {
     return { ok: false, error: 'no_project_id', message: String(rawText).slice(0, 300) };
   }
 
-  if (opts.wait === true) {
-    const maxTries = Math.min(Number(opts.maxPolls) || 4, 6);
-    let movie = null;
-    for (let i = 0; i < maxTries; i++) {
-      await sleep(i === 0 ? 2500 : 3500);
-      movie = await pollMovie(apiKey, project);
-      if (movie && (movie.status === 'done' || movie.status === 'error' || movie.status === 'timeout'))
-        break;
-    }
-    if (movie && movie.status === 'done') {
-      const url = movie.url || movie.result || null;
-      return {
-        ok: true,
-        project,
-        status: 'done',
-        url,
-        videoUrl: url,
-        thumbnail: movie.thumbnail || null,
-        message:
-          lang === 'it'
-            ? 'Video generato: ' + subject
-            : 'Video generated: ' + subject,
-        subject,
-        provider: 'json2video',
-      };
-    }
-    if (movie && movie.status === 'error') {
-      return {
-        ok: false,
-        project,
-        status: 'error',
-        message: movie.message || (lang === 'it' ? 'Errore nel render video.' : 'Video render error.'),
-        provider: 'json2video',
-      };
-    }
-  }
-
   return {
     ok: true,
     project,
@@ -177,8 +149,8 @@ export async function generateVideo(prompt, opts = {}) {
     videoUrl: null,
     message:
       lang === 'it'
-        ? 'Video in elaborazione… testo: «' + subject + '» (id: ' + project + ')'
-        : 'Video processing… text: «' + subject + '» (id: ' + project + ')',
+        ? 'Video in elaborazione… testo: «' + subject + '» — attendi 5–15 secondi'
+        : 'Video processing… text: «' + subject + '» — wait 5–15s',
     subject,
     provider: 'json2video',
   };
@@ -216,8 +188,4 @@ async function pollMovie(apiKey, projectId) {
   } catch (_) {
     return null;
   }
-}
-
-function sleep(ms) {
-  return new Promise((r) => setTimeout(r, ms));
 }
