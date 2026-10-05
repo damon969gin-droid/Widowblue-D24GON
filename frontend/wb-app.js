@@ -1,4 +1,4 @@
-/* WidowBlue app – chat, voice, upload, agents, image, video poll, multi-lang */
+/* WidowBlue app – chat, allegati, voice, agents, image, video, multi-lang */
 
 const logEl=document.getElementById('log');
 const qEl=document.getElementById('q');
@@ -187,12 +187,81 @@ if(allAgentsBtn){
 }
 setTimeout(()=>applyAllAgentsVisual(allAgents),0);
 
+async function fileToAttachment(f){
+  const att={name:f.name,type:f.type||'application/octet-stream',size:f.size};
+  if(f.type&&f.type.startsWith('image/')&&f.size<4*1024*1024){
+    try{
+      att.dataUrl=await new Promise((resolve,reject)=>{
+        const r=new FileReader();
+        r.onload=()=>resolve(r.result);
+        r.onerror=reject;
+        r.readAsDataURL(f);
+      });
+    }catch(_e){}
+  }
+  return att;
+}
+
+function renderAttachChips(){
+  if(!chipsEl)return;
+  chipsEl.innerHTML='';
+  files.forEach((f,i)=>{
+    const c=document.createElement('span');
+    c.className='chip attach-chip';
+    c.style.cssText='display:inline-flex;align-items:center;gap:4px;cursor:pointer';
+    c.title='Rimuovi allegato';
+    if(f._preview){
+      const img=document.createElement('img');
+      img.src=f._preview; img.alt=f.name||'img';
+      img.style.cssText='width:36px;height:36px;object-fit:cover;border-radius:4px';
+      c.appendChild(img);
+    }
+    const lab=document.createElement('span');
+    const nm=f.name||'file';
+    lab.textContent=nm.length>28?nm.slice(0,24)+'\u2026':nm;
+    c.appendChild(lab);
+    c.onclick=()=>{files.splice(i,1);if(fileInput)fileInput.value='';renderAttachChips()};
+    chipsEl.appendChild(c);
+  });
+}
+
 if(clipBtn&&fileInput){
+  try{fileInput.setAttribute('accept','image/*,.pdf,.txt,.md,.json,video/*,audio/*')}catch(_e){}
   clipBtn.onclick=()=>fileInput.click();
-  fileInput.onchange=()=>{
-    files=Array.from(fileInput.files||[]);
-    if(chipsEl){chipsEl.innerHTML='';files.forEach((f,i)=>{const c=document.createElement('span');c.className='chip';c.textContent=f.name;c.onclick=()=>{files.splice(i,1);fileInput.value='';fileInput.onchange()};chipsEl.appendChild(c)})}
+  fileInput.onchange=async()=>{
+    const picked=Array.from(fileInput.files||[]);
+    for(const f of picked){
+      if(f.type&&f.type.startsWith('image/')){
+        try{
+          f._preview=await new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(r.result);r.onerror=rej;r.readAsDataURL(f)});
+        }catch(_e){}
+      }
+      files.push(f);
+    }
+    try{fileInput.value=''}catch(_e){}
+    renderAttachChips();
   };
+}
+
+if(qEl){
+  qEl.addEventListener('paste',async(e)=>{
+    const items=(e.clipboardData&&e.clipboardData.items)||[];
+    let added=false;
+    for(const it of items){
+      if(it.type&&it.type.startsWith('image/')){
+        e.preventDefault();
+        const blob=it.getAsFile();
+        if(!blob)continue;
+        const f=new File([blob],'incolla-'+Date.now()+'.png',{type:blob.type||'image/png'});
+        try{
+          f._preview=await new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(r.result);r.onerror=rej;r.readAsDataURL(f)});
+        }catch(_e){}
+        files.push(f);
+        added=true;
+      }
+    }
+    if(added) renderAttachChips();
+  });
 }
 
 if(voiceBtn&&(window.SpeechRecognition||window.webkitSpeechRecognition)){
@@ -211,31 +280,57 @@ if(voiceBtn&&(window.SpeechRecognition||window.webkitSpeechRecognition)){
   };
 }
 
-if(newChatBtn){newChatBtn.onclick=()=>{threadMessages=[];chatMemory=[];lastResult='';if(logEl){logEl.innerHTML='';updateLogTouchMode()}if(window.WBNet&&window.WBNet.setRunning)window.WBNet.setRunning(false)}};
+if(newChatBtn){newChatBtn.onclick=()=>{threadMessages=[];chatMemory=[];lastResult='';files=[];renderAttachChips();if(logEl){logEl.innerHTML='';updateLogTouchMode()}if(window.WBNet&&window.WBNet.setRunning)window.WBNet.setRunning(false)}};
 if(shareThreadBtn){shareThreadBtn.onclick=()=>{const text=threadMessages.map(m=>m.role==='user'?('Tu: '+(m.text||'')):'WB: '+(m.plain||m.text||'')).join('\n\n');shareText('Widow Blue chat',text||lastResult||'',shareThreadBtn)}};
 
 async function sendQuery(){
   if(appBusy)return;
   const text=(qEl&&qEl.value||'').trim();
-  const atts=files.slice();
-  if(!text&&!atts.length)return;
+  const attsFiles=files.slice();
+  if(!text&&!attsFiles.length)return;
   appBusy=true; if(goBtn)goBtn.disabled=true; if(qEl)qEl.value='';
+  const atts=[];
+  for(const f of attsFiles){
+    atts.push(await fileToAttachment(f));
+  }
+  files=[]; renderAttachChips();
   const langSelVal=currentLang();
   const detected=detectInputLang(text||'');
   const displayText=text||'(allegati)';
   const userDiv=document.createElement('div');
   userDiv.className='msg user';
-  userDiv.innerHTML='<i>Tu</i> '+esc(displayText);
+  const head=document.createElement('div');
+  head.innerHTML='<i>Tu</i> '+esc(displayText);
+  userDiv.appendChild(head);
+  if(atts.length){
+    const row=document.createElement('div');
+    row.className='msg-atts';
+    row.style.cssText='display:flex;flex-wrap:wrap;gap:6px;margin-top:6px';
+    atts.forEach(a=>{
+      if(a.dataUrl&&a.type&&a.type.startsWith('image/')){
+        const img=document.createElement('img');
+        img.src=a.dataUrl; img.alt=a.name||'allegato';
+        img.style.cssText='max-width:140px;max-height:140px;border-radius:8px;border:1px solid rgba(77,225,255,.35);object-fit:cover';
+        row.appendChild(img);
+      }else{
+        const chip=document.createElement('span');
+        chip.className='chip';
+        chip.textContent=(a.name||'file')+' ('+Math.round((a.size||0)/1024)+' KB)';
+        row.appendChild(chip);
+      }
+    });
+    userDiv.appendChild(row);
+  }
   if(logEl){logEl.appendChild(userDiv);updateLogTouchMode();scrollLog()}
   if(window.WBNet&&window.WBNet.setRunning) window.WBNet.setRunning(true);
   else if(window.WBNet&&window.WBNet.ignite){window.running=true;window.WBNet.ignite()}
-  threadMessages.push({role:'user',text:displayText,at:Date.now()});
-  pushMemory('user',displayText);
+  threadMessages.push({role:'user',text:displayText,attachments:atts.map(a=>({name:a.name,type:a.type,size:a.size})),at:Date.now()});
+  pushMemory('user',displayText+(atts.length?' [+'+atts.length+' allegati]':''));
   const lang=langSelVal==='auto'?detected:langSelVal;
   const history=chatMemory.slice(-28).map(m=>({role:m.role,text:m.text,entity:m.entity||null,topic:m.topic||null}));
   try{
     if(typeof WB!=='undefined'&&WB.api){
-      const body={query:text,prompt:text,deep:true,lang,history,allAgents:allAgents,attachments:atts.map(a=>({name:a.name,type:a.type,size:a.size}))};
+      const body={query:text,prompt:text,deep:true,lang,history,allAgents:allAgents,attachments:atts.map(a=>({name:a.name,type:a.type,size:a.size,dataUrl:a.dataUrl||null}))};
       let data=null;
       try{data=await WB.api('/api/search',{method:'POST',body:JSON.stringify(body)})}
       catch(e1){try{data=await WB.api('/api/orchestrate',{method:'POST',body:JSON.stringify(body)});if(data&&data.search)data=data.search}catch(e2){data=null}}
@@ -248,8 +343,8 @@ async function sendQuery(){
             appendReply({plain:msg,html:'<div class="ans-text">'+esc(msg)+'</div>',videoUrl:null});
           }else if(!url && project){
             appendReply({plain:msg+' Attendo il render…',html:'<div class="ans-text">'+esc(msg)+' <i>Attendo il render…</i></div>',videoUrl:null});
-            for(let i=0;i<18 && !url;i++){
-              await new Promise(r=>setTimeout(r,5000));
+            for(let i=0;i<24 && !url;i++){
+              await new Promise(r=>setTimeout(r,i===0?3000:5000));
               try{
                 const st=await WB.api('/api/video/status?project='+encodeURIComponent(project),{method:'GET'});
                 if(st&&st.status==='done'&&(st.url||st.videoUrl)){url=st.url||st.videoUrl;msg=lang==='it'?'Video pronto.':'Video ready.';break}
