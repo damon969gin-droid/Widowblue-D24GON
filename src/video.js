@@ -1,14 +1,28 @@
 /**
  * WidowBlue – generazione video via JSON2Video
  * Secret: JSON2VIDEO_API_KEY (o J2V_API_KEY)
- * Docs: https://json2video.com/docs/api/
  */
 
 export function isVideoRequest(prompt) {
   const t = String(prompt || '').toLowerCase();
-  if (/\b(video|filmato|clip|movie|reel|short|videoclip)\b/i.test(t)) return true;
-  if (/\b(genera|generami|crea|creami|fai|make|generate|create)\b[\s\S]{0,100}\b(video|filmato|clip|movie)\b/i.test(t))
+  // Parole esplicite video
+  if (/\b(video|filmato|videoclip|reel|short|movie|clip)\b/i.test(t)) return true;
+  // Genera/crea + animazione / motion / scritta animata
+  if (
+    /\b(genera|generami|crea|creami|fai|make|generate|create|realizza)\b/i.test(t) &&
+    /\b(animat[oaie]|animazione|motion\s*graphics?|logo\s*animat|testo\s*animat|scritta\s*animat|tipo\s*cinetico)\b/i.test(t)
+  ) {
     return true;
+  }
+  // genera/crea + scritta/testo + (appare|animat|schermo)
+  if (
+    /\b(genera|crea|fai|make|generate)\b/i.test(t) &&
+    /\b(scritta|testo|titolo)\b/i.test(t) &&
+    /\b(animat|video|appare|compar)/i.test(t)
+  ) {
+    return true;
+  }
+  if (/\b(json2video|json\s*2\s*video)\b/i.test(t)) return true;
   return false;
 }
 
@@ -17,23 +31,31 @@ export function extractVideoPrompt(prompt) {
   s = s
     .replace(/^(per\s+favore\s+|please\s+)/i, '')
     .replace(
-      /^(generami|genera|crea|creami|fai|make|generate|create)\s+(un[oa]?\s+)?(video|clip|movie|filmato|reel|short|videoclip)\s*(di|of|about|su|per|con|:)?\s*/i,
+      /^(generami|genera|crea|creami|fai|make|generate|create|realizza)\s+(un[oa]?\s+)?(video|clip|movie|filmato|reel|short|videoclip)?\s*(animat[oaie]?\s*)?(di|of|about|su|per|con|:)?\s*/i,
       ''
     )
-    .replace(/^(un[oa]?\s+)?(video|clip|movie|filmato)\s*(di|of|about|su|per|:)?\s*/i, '')
+    .replace(/^(un[oa]?\s+)?(video|clip|movie|filmato)\s*(animat[oaie]?\s*)?(di|of|about|su|per|:)?\s*/i, '')
     .trim();
+  const quoted = s.match(/["«]([^"»]{2,120})["»]/);
+  if (quoted) return quoted[1].trim().slice(0, 100);
+  const scritta = s.match(/(?:scritta|testo|titolo)\s+(?:["«]?)([^"».!?]{2,100})/i);
+  if (scritta) return scritta[1].trim().slice(0, 100);
   if (!s || s.length < 2) s = String(prompt || '').trim() || 'WidowBlue';
-  return s.slice(0, 800);
+  return s.slice(0, 100);
 }
 
 function getApiKey(env) {
   return (
-    (env && (env.JSON2VIDEO_API_KEY || env.J2V_API_KEY || env.JSON2VIDEO_KEY || env.JSON_2_VIDEO_API_KEY)) ||
+    (env &&
+      (env.JSON2VIDEO_API_KEY ||
+        env.J2V_API_KEY ||
+        env.JSON2VIDEO_KEY ||
+        env.JSON_2_VIDEO_API_KEY)) ||
     ''
   );
 }
 
-function buildMovieJson(text, lang) {
+function buildMovieJson(text) {
   const title = String(text || 'WidowBlue').slice(0, 100);
   return {
     resolution: 'full-hd',
@@ -63,14 +85,16 @@ export async function generateVideo(prompt, opts = {}) {
       error: 'missing_json2video_key',
       message:
         lang === 'it'
-          ? 'Secret JSON2VIDEO_API_KEY mancante su Cloudflare Pages (Settings → Variables and Secrets).'
+          ? 'Secret JSON2VIDEO_API_KEY mancante su Cloudflare Pages (Settings → Variables and Secrets). Nome esatto: JSON2VIDEO_API_KEY'
           : 'Missing JSON2VIDEO_API_KEY secret on Cloudflare Pages.',
     };
   }
 
   const subject = extractVideoPrompt(prompt);
   const body =
-    opts.movieJson && typeof opts.movieJson === 'object' ? opts.movieJson : buildMovieJson(subject, lang);
+    opts.movieJson && typeof opts.movieJson === 'object'
+      ? opts.movieJson
+      : buildMovieJson(subject);
 
   let res;
   try {
@@ -84,11 +108,7 @@ export async function generateVideo(prompt, opts = {}) {
       body: JSON.stringify(body),
     });
   } catch (e) {
-    return {
-      ok: false,
-      error: 'network',
-      message: String(e && e.message ? e.message : e),
-    };
+    return { ok: false, error: 'network', message: String(e && e.message ? e.message : e) };
   }
 
   const rawText = await res.text().catch(() => '');
@@ -109,11 +129,7 @@ export async function generateVideo(prompt, opts = {}) {
 
   const project = data.project || data.projectId || (data.movie && data.movie.project);
   if (!project) {
-    return {
-      ok: false,
-      error: 'no_project_id',
-      message: String(rawText).slice(0, 300),
-    };
+    return { ok: false, error: 'no_project_id', message: String(rawText).slice(0, 300) };
   }
 
   if (opts.wait === true) {
@@ -122,7 +138,8 @@ export async function generateVideo(prompt, opts = {}) {
     for (let i = 0; i < maxTries; i++) {
       await sleep(i === 0 ? 2500 : 3500);
       movie = await pollMovie(apiKey, project);
-      if (movie && (movie.status === 'done' || movie.status === 'error' || movie.status === 'timeout')) break;
+      if (movie && (movie.status === 'done' || movie.status === 'error' || movie.status === 'timeout'))
+        break;
     }
     if (movie && movie.status === 'done') {
       const url = movie.url || movie.result || null;
@@ -133,7 +150,10 @@ export async function generateVideo(prompt, opts = {}) {
         url,
         videoUrl: url,
         thumbnail: movie.thumbnail || null,
-        message: lang === 'it' ? 'Video generato: ' + subject.slice(0, 80) : 'Video generated: ' + subject.slice(0, 80),
+        message:
+          lang === 'it'
+            ? 'Video generato: ' + subject
+            : 'Video generated: ' + subject,
         subject,
         provider: 'json2video',
       };
@@ -157,8 +177,8 @@ export async function generateVideo(prompt, opts = {}) {
     videoUrl: null,
     message:
       lang === 'it'
-        ? 'Video in elaborazione… (id: ' + project + ')'
-        : 'Video processing… (id: ' + project + ')',
+        ? 'Video in elaborazione… testo: «' + subject + '» (id: ' + project + ')'
+        : 'Video processing… text: «' + subject + '» (id: ' + project + ')',
     subject,
     provider: 'json2video',
   };
