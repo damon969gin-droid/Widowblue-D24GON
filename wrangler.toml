@@ -6,40 +6,10 @@ compatibility_date = "2026-09-01"
 directory = "./frontend"
 binding = "ASSETS"
 
-# Cloudflare D1 (database)
-# 1) npx wrangler d1 create widowblue-db
-# 2) incolla database_id qui sotto
-# 3) npx wrangler d1 execute widowblue-db --remote --file=./migrations/0001_init.sql
-# 4) POST /api/agents/seed  (opzionale, popola 453 agenti)
-# [[d1_databases]]
-# binding = "DB"
-# database_name = "widowblue-db"
-# database_id = "YOUR_D1_DATABASE_ID"
-
-# Optional: Cloudflare Workers AI for RAG generation
-# Dashboard → Worker → Settings → Bindings → Add → Workers AI → name: AI
-# [ai]
-# binding = "AI"
-
-# Auth KV (obbligatorio per auth):
-#   npx wrangler kv namespace create AUTH_KV
-# [[kv_namespaces]]
-# binding = "AUTH_KV"
-# id = "YOUR_KV_ID"
-# preview_id = "YOUR_PREVIEW_KV_ID"
-
-# Secrets (NON Variables plaintext):
-#   npx wrangler secret put SERPER_API_KEY      # Google SERP (consigliato)
-#   npx wrangler secret put GOOGLE_API_KEY      # Google Custom Search JSON API
-#   npx wrangler secret put GOOGLE_CSE_ID       # Search Engine ID (cx)
-#   npx wrangler secret put TAVILY_API_KEY
-#   npx wrangler secret put EXA_API_KEY         # Exa neural search
-#   npx wrangler secret put OPEN_ROUTER_API_KEY  # OpenRouter LLM (predefinito)
-#   npx wrangler secret put OPENROUTER_MODEL     # opzionale, es. google/gemini-2.0-flash-exp:free
-#   npx wrangler secret put PEPPER
-#   npx wrangler secret put PERPLEXITY_API_KEY
-#   npx wrangler secret put BRAVE_API_KEY
-#
-# Google CSE: https://programmablesearchengine.google.com/
-# API key:   https://console.cloud.google.com/apis/credentials
-# Abilita:   Custom Search API
+# Secrets (NON Variables plaintext) – Pages Dashboard → Settings → Variables and Secrets:
+#   SERPER_API_KEY, GOOGLE_API_KEY, GOOGLE_CSE_ID, TAVILY_API_KEY
+#   EXA_API_KEY                  # Exa search (predefinito)
+#   OPEN_ROUTER_API_KEY          # OpenRouter LLM (predefinito)
+#   OPENROUTER_MODEL             # opzionale
+#   JSON2VIDEO_API_KEY           # JSON2Video generazione video
+#   PERPLEXITY_API_KEY, BRAVE_API_KEY, PEPPER
