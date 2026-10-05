@@ -51,20 +51,29 @@ export default {
 async function handleSearch(request, env, cors) {
   const body = await request.json().catch(() => ({}));
   const raw = String(body.query || body.prompt || body.q || '').trim();
-  if (!raw) return json({ error: 'empty_query' }, 400, cors);
+  const atts = Array.isArray(body.attachments) ? body.attachments : [];
+  if (!raw && !atts.length) return json({ error: 'empty_query' }, 400, cors);
 
-  const guarded = guardInput(raw);
+  const guarded = guardInput(raw || 'allegati');
   if (guarded.blocked) {
     return json({ ok: false, error: 'blocked', reason: guarded.reason }, 400, cors);
   }
   const safeQuery = guarded.text || raw;
 
-  const lang = resolveLang(body, raw);
-  const detected = detectLang(raw);
+  const lang = resolveLang(body, raw || 'it');
+  const detected = detectLang(raw || 'it');
   let searchQuery = safeQuery;
 
-  if (isVideoRequest(raw)) {
-    const vid = await generateVideo(raw, { env, lang, wait: false });
+  if (isVideoRequest(raw) || (atts.some((a) => a && String(a.type || '').startsWith('image/')) && /\b(video|animat)/i.test(raw))) {
+    const imgAtt = atts.find((a) => a && a.dataUrl && String(a.type || '').startsWith('image/'));
+    const httpsImg = atts.find((a) => a && a.url && /^https?:\/\//i.test(String(a.url)));
+    const vid = await generateVideo(raw || 'video da immagine', {
+      env,
+      lang,
+      wait: false,
+      imageUrl: (httpsImg && httpsImg.url) || (imgAtt && imgAtt.dataUrl) || undefined,
+      withText: /\b(scritta|testo|titolo|overlay)\b/i.test(raw),
+    });
     return json(
       {
         ok: !!vid.ok,
@@ -114,12 +123,6 @@ async function handleSearch(request, env, cors) {
       );
     }
   } catch (_) {}
-
-  if (body.lang && body.lang !== 'auto' && detected !== lang && searchQuery.length > 2) {
-    try {
-      await translateText(searchQuery, detected, 'en');
-    } catch (_) {}
-  }
 
   const history = Array.isArray(body.history) ? body.history : [];
   const ctx = buildConversationContext(searchQuery, history);
@@ -177,6 +180,7 @@ async function handleSearch(request, env, cors) {
       boosts: pipeline.boosts,
       contributions: body.debugAgents ? pipeline.contributions : (pipeline.contributions || []).slice(0, 8),
     };
+    data.attachmentsReceived = atts.length;
     return json(data, 200, cors);
   }
 
@@ -223,14 +227,18 @@ async function handleVideo(request, env, cors) {
   const body = await request.json().catch(() => ({}));
   const prompt = String(body.prompt || body.query || '').trim();
   const movieJson = body.movie || body.movieJson || null;
-  if (!prompt && !movieJson) return json({ error: 'empty_prompt' }, 400, cors);
+  const atts = Array.isArray(body.attachments) ? body.attachments : [];
+  if (!prompt && !movieJson && !atts.length) return json({ error: 'empty_prompt' }, 400, cors);
   const lang = resolveLang(body, prompt || 'video');
+  const imgAtt = atts.find((a) => a && (a.dataUrl || a.url) && String(a.type || 'image/').startsWith('image/'));
   const vid = await generateVideo(prompt || 'video', {
     env,
     lang,
     wait: body.wait === true,
     movieJson: movieJson || undefined,
     maxPolls: body.maxPolls,
+    imageUrl: body.imageUrl || (imgAtt && (imgAtt.url || imgAtt.dataUrl)) || undefined,
+    withText: body.withText === true,
   });
   const selection = selectAgentsForTask({ query: prompt || 'video', intentHint: 'video' });
   return json(

@@ -27,6 +27,8 @@ canvas#c{position:fixed;inset:0;width:100%;height:100%;touch-action:none;cursor:
 .toggles{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px;max-width:720px;margin-left:auto;margin-right:auto}
 button.toggle{height:34px;padding:0 12px;border-radius:6px;border:1px solid rgba(77,225,255,.35);background:rgba(4,10,18,.45);color:var(--tx);font:600 12px Rajdhani,sans-serif;cursor:pointer}
 button.toggle.on{border-color:var(--am);color:var(--am)}
+#chips{display:flex;flex-wrap:wrap;gap:6px;max-width:720px;margin:0 auto 6px}
+.chip.attach-chip{display:inline-flex;align-items:center;gap:4px;background:rgba(77,225,255,.12);border:1px solid rgba(77,225,255,.35);padding:4px 8px;border-radius:8px;font-size:12px;cursor:pointer}
 .row{display:flex;gap:8px;align-items:center;max-width:720px;margin:0 auto}
 select.lang{height:42px;background:rgba(4,10,18,.5);border:1px solid rgba(77,225,255,.4);border-radius:6px;color:var(--tx);font:600 12px Rajdhani,sans-serif;max-width:88px}
 #q{flex:1;height:42px;padding:0 12px;border-radius:6px;border:1px solid rgba(77,225,255,.4);background:rgba(4,10,18,.55);color:var(--tx);font:15px Rajdhani,sans-serif}
@@ -36,7 +38,7 @@ button.plus{min-width:42px;padding:0;font-size:20px}
 button:disabled{opacity:.5}
 </style></head><body>
 <canvas id="c"></canvas>
-<div class="top"><h1>WIDOW BLUE</h1><p>Scrivi · genera immagini o video · trascina la rete</p></div>
+<div class="top"><h1>WIDOW BLUE</h1><p>Scrivi · allega file/immagini · genera video</p></div>
 <div class="stat"><b id="n">0</b>attivi su <span id="t">453</span> agenti</div>
 <div class="bot">
 <div id="log" class="empty"></div>
@@ -47,15 +49,15 @@ button:disabled{opacity:.5}
 </div>
 <div id="chips"></div>
 <div class="row">
-<button class="plus sec" id="clip" type="button">+</button>
-<input type="file" id="file" multiple hidden>
+<button class="plus sec" id="clip" type="button" title="Allega file o immagine">+</button>
+<input type="file" id="file" multiple hidden accept="image/*,.pdf,.txt,.md,.json,video/*,audio/*">
 <select class="lang" id="lang"></select>
-<input id="q" type="text" placeholder="Scrivi… es. genera un video ciao" autocomplete="off">
+<input id="q" type="text" placeholder="Messaggio… oppure + per allegare" autocomplete="off">
 <button class="sec" id="voice" type="button">Voce</button>
 <button id="go" type="button">Invia</button>
 </div></div>
-<script src="wb-api.js?v=20261005vid2"></script>
-<script src="wb-auth.js?v=20261005vid2"></script>
-<script src="wb-canvas.js?v=20261005vid2"></script>
-<script src="wb-app.js?v=20261005vid2"></script>
+<script src="wb-api.js?v=20261005att"></script>
+<script src="wb-auth.js?v=20261005att"></script>
+<script src="wb-canvas.js?v=20261005att"></script>
+<script src="wb-app.js?v=20261005att"></script>
 </body></html>
