@@ -1,1 +1,1 @@
-force-deploy 2026-10-05T13:39Z
+force-deploy 2026-10-05T18:17Z openrouter+exa
