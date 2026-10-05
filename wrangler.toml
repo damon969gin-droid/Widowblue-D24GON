@@ -34,6 +34,8 @@ binding = "ASSETS"
 #   npx wrangler secret put GOOGLE_CSE_ID       # Search Engine ID (cx)
 #   npx wrangler secret put TAVILY_API_KEY
 #   npx wrangler secret put EXA_API_KEY         # Exa neural search
+#   npx wrangler secret put OPEN_ROUTER_API_KEY  # OpenRouter LLM (predefinito)
+#   npx wrangler secret put OPENROUTER_MODEL     # opzionale, es. google/gemini-2.0-flash-exp:free
 #   npx wrangler secret put PEPPER
 #   npx wrangler secret put PERPLEXITY_API_KEY
 #   npx wrangler secret put BRAVE_API_KEY
