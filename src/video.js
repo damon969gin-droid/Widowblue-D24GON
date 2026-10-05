@@ -1,6 +1,8 @@
 /**
- * WidowBlue – generazione video via JSON2Video (solo testo)
+ * WidowBlue – video animato da immagine (JSON2Video)
+ * Pipeline: 1) genera immagine pubblica  2) anima con zoom/pan (Ken Burns)
  * Secret: JSON2VIDEO_API_KEY
+ * Opzionale: FAL_KEY per image-to-video AI vero (futuro)
  */
 
 export function isVideoRequest(prompt) {
@@ -8,7 +10,7 @@ export function isVideoRequest(prompt) {
   if (/\b(video|filmato|videoclip|reel|short|movie|clip)\b/i.test(t)) return true;
   if (
     /\b(genera|generami|crea|creami|fai|make|generate|create|realizza)\b/i.test(t) &&
-    /\b(animat[oaie]|animazione|motion\s*graphics?|logo\s*animat|testo\s*animat|scritta\s*animat|tipo\s*cinetico)\b/i.test(t)
+    /\b(animat[oaie]|animazione|motion\s*graphics?|logo\s*animat|testo\s*animat|scritta\s*animat)\b/i.test(t)
   ) {
     return true;
   }
@@ -35,11 +37,11 @@ export function extractVideoPrompt(prompt) {
     .replace(/\b(con\s+solo\s+testo|solo\s+testo|only\s+text)\b/gi, '')
     .trim();
   const quoted = s.match(/["«]([^"»]{2,120})["»]/);
-  if (quoted) return quoted[1].trim().slice(0, 100);
+  if (quoted) return quoted[1].trim().slice(0, 200);
   const scritta = s.match(/(?:scritta|testo|titolo)\s+(?:["«]?)([^"».!?]{2,100})/i);
-  if (scritta) return scritta[1].trim().slice(0, 100);
-  if (!s || s.length < 2) s = String(prompt || '').trim() || 'WidowBlue';
-  return s.slice(0, 100);
+  if (scritta) return scritta[1].trim().slice(0, 200);
+  if (!s || s.length < 2) s = String(prompt || '').trim() || 'WidowBlue cyan neural network';
+  return s.slice(0, 200);
 }
 
 function getApiKey(env) {
@@ -53,32 +55,62 @@ function getApiKey(env) {
   );
 }
 
-/** Video full-hd: solo testo ciano su sfondo scuro */
-function buildMovieJson(text) {
-  const title = String(text || 'WidowBlue').slice(0, 100);
+/** URL immagine pubblica (Pollinations) – accessibile da JSON2Video */
+function buildImageUrl(subject) {
+  const prompt =
+    String(subject || 'WidowBlue') +
+    ', cinematic, highly detailed, dramatic lighting, 4k, motion still, epic scene';
+  const seed = Math.floor(Math.random() * 1e9);
+  return (
+    'https://image.pollinations.ai/prompt/' +
+    encodeURIComponent(prompt) +
+    '?width=1280&height=720&nologo=true&enhance=true&seed=' +
+    seed
+  );
+}
+
+/**
+ * Movie: immagine a pieno schermo + zoom/pan (Ken Burns) + eventuale overlay testo.
+ * Non è “solo testo”: parte da un’immagine generata.
+ */
+function buildAnimatedMovieJson(imageUrl, subject, opts = {}) {
+  const duration = 8;
+  const overlay =
+    opts.overlayText ||
+    (opts.withText !== false ? String(subject || '').slice(0, 60) : null);
+  const elements = [
+    {
+      type: 'image',
+      src: imageUrl,
+      duration,
+      zoom: 3,
+      pan: 'right',
+      'fade-in': 0.5,
+      'fade-out': 0.5,
+    },
+  ];
+  if (overlay && String(overlay).trim().length > 1) {
+    elements.push({
+      type: 'text',
+      text: String(overlay).trim().slice(0, 80),
+      duration,
+      style: '001',
+      'font-size': 48,
+      'font-color': '#4de1ff',
+      'font-family': 'Roboto',
+      'text-align': 'center',
+      position: 'bottom-center',
+      'fade-in': 1,
+    });
+  }
   return {
     resolution: 'full-hd',
     quality: 'high',
     scenes: [
       {
-        duration: 7,
+        duration,
         'background-color': '#040a12',
-        elements: [
-          {
-            type: 'text',
-            text: title,
-            duration: 7,
-            style: '001',
-            'font-size': 72,
-            'font-color': '#4de1ff',
-            'font-family': 'Roboto',
-            'text-align': 'center',
-            x: 0,
-            y: 0,
-            width: '100%',
-            height: '100%',
-          },
-        ],
+        elements,
       },
     ],
   };
@@ -100,10 +132,26 @@ export async function generateVideo(prompt, opts = {}) {
   }
 
   const subject = extractVideoPrompt(prompt);
+  // Immagine sorgente: URL esplicito nel prompt, oppure generata
+  const urlInPrompt = String(prompt || '').match(/https?:\/\/[^\s"']+\.(?:png|jpe?g|webp|gif)/i);
+  const imageUrl =
+    (opts.imageUrl && String(opts.imageUrl)) ||
+    (urlInPrompt && urlInPrompt[0]) ||
+    buildImageUrl(subject);
+
   const body =
     opts.movieJson && typeof opts.movieJson === 'object'
       ? opts.movieJson
-      : buildMovieJson(subject);
+      : buildAnimatedMovieJson(imageUrl, subject, {
+          withText: /\b(scritta|testo|titolo|overlay)\b/i.test(prompt || '') || opts.withText === true,
+          overlayText: opts.overlayText,
+        });
+
+  // Se chiede esplicitamente scritta, forza overlay; altrimenti solo immagine animata
+  if (!opts.movieJson && !/\b(scritta|testo|titolo|overlay)\b/i.test(prompt || '') && opts.withText !== true) {
+    // solo immagine + motion, senza testo
+    body.scenes[0].elements = body.scenes[0].elements.filter((e) => e.type === 'image');
+  }
 
   let res;
   try {
@@ -147,12 +195,14 @@ export async function generateVideo(prompt, opts = {}) {
     status: 'queued',
     url: null,
     videoUrl: null,
+    imageUrl,
     message:
       lang === 'it'
-        ? 'Video in elaborazione… testo: «' + subject + '» — attendi 5–15 secondi'
-        : 'Video processing… text: «' + subject + '» — wait 5–15s',
+        ? 'Video animato in elaborazione (immagine + motion)… attendi 15–40 s'
+        : 'Animated video processing (image + motion)… wait 15–40s',
     subject,
     provider: 'json2video',
+    pipeline: 'image-to-kenburns',
   };
 }
 
