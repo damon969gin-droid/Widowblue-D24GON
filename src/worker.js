@@ -5,6 +5,7 @@
 import { modularSearch } from './search.js';
 import { runRAG } from './rag.js';
 import { generateImage } from './image.js';
+import { generateVideo, getVideoStatus, isVideoRequest } from './video.js';
 import { selectAgentsForTask, runAgentContributions } from './agents.js';
 import { buildConversationContext } from './context.js';
 import { resolveLang, detectLang, translateText, forceLang } from './lang.js';
@@ -35,6 +36,8 @@ export default {
       if (path === '/api/search' || path === '/api/query') return await handleSearch(request, env, CORS);
       if (path === '/api/rag') return await handleRAG(request, env, CORS);
       if (path === '/api/image') return await handleImage(request, env, CORS);
+      if (path === '/api/video') return await handleVideo(request, env, CORS);
+      if (path === '/api/video/status') return await handleVideoStatus(request, env, CORS);
       if (path === '/api/orchestrate') return await handleOrchestrate(request, env, CORS);
       if (path === '/api/health') return json({ ok: true, ts: Date.now() }, 200, CORS);
       if (env.ASSETS) return env.ASSETS.fetch(request);
@@ -59,6 +62,26 @@ async function handleSearch(request, env, cors) {
   const lang = resolveLang(body, raw);
   const detected = detectLang(raw);
   let searchQuery = safeQuery;
+
+  if (isVideoRequest(raw)) {
+    const vid = await generateVideo(raw, { env, lang, wait: true });
+    return json(
+      {
+        ok: !!vid.ok,
+        mode: 'video',
+        video: vid,
+        answer: {
+          text:
+            vid.message ||
+            (lang === 'it' ? 'Richiesta video inviata.' : 'Video request submitted.'),
+        },
+        videoUrl: vid.url || vid.videoUrl || null,
+        lang,
+      },
+      vid.ok ? 200 : 502,
+      cors
+    );
+  }
 
   if (/\b(genera|generate|crea|draw|immagine|image|foto|picture)\b/i.test(raw) && /\b(immagine|image|foto|picture|logo|icon)\b/i.test(raw)) {
     const img = await generateImage(raw, { env, lang });
@@ -194,6 +217,45 @@ async function handleRAG(request, env, cors) {
   }
   data.lang = lang;
   return json(data, 200, cors);
+}
+
+async function handleVideo(request, env, cors) {
+  const body = await request.json().catch(() => ({}));
+  const prompt = String(body.prompt || body.query || '').trim();
+  const movieJson = body.movie || body.movieJson || null;
+  if (!prompt && !movieJson) return json({ error: 'empty_prompt' }, 400, cors);
+  const lang = resolveLang(body, prompt || 'video');
+  const vid = await generateVideo(prompt || 'video', {
+    env,
+    lang,
+    wait: body.wait !== false,
+    movieJson: movieJson || undefined,
+    maxPolls: body.maxPolls,
+  });
+  const selection = selectAgentsForTask({ query: prompt || 'video', intentHint: 'video' });
+  return json(
+    {
+      ...vid,
+      intent: 'video',
+      agents: selection.agents,
+      agentsCount: selection.count,
+      lang,
+    },
+    vid.ok ? 200 : 502,
+    cors
+  );
+}
+
+async function handleVideoStatus(request, env, cors) {
+  const url = new URL(request.url);
+  let project = url.searchParams.get('project') || '';
+  if (request.method === 'POST') {
+    const body = await request.json().catch(() => ({}));
+    project = String(body.project || project || '').trim();
+  }
+  if (!project) return json({ error: 'missing_project' }, 400, cors);
+  const st = await getVideoStatus(project, { env });
+  return json(st, st.ok ? 200 : 502, cors);
 }
 
 async function handleImage(request, env, cors) {
