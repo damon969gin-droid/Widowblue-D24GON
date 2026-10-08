@@ -97,8 +97,8 @@ export function resolveLang(body, prompt) {
 
 export function noAnswerMsg(lang) {
   const map = {
-    it: 'Non ho trovato una risposta chiara e aggiornata nelle fonti disponibili. Prova a riformulare la domanda o a specificare meglio il contesto.',
-    en: 'I could not find a clear, up-to-date answer from the available sources. Try rephrasing or adding more context.',
+    it: 'Non ho trovato abbastanza informazioni affidabili per risponderti con certezza. Se riformuli la domanda o aggiungi un dettaglio in più, posso riprovare.',
+    en: 'I could not find enough reliable information to answer with confidence. If you rephrase or add a bit more detail, I can try again.',
     es: 'No encontré una respuesta clara y actualizada en las fuentes disponibles. Intenta reformular la pregunta.',
     fr: "Je n'ai pas trouvé de réponse claire et à jour dans les sources disponibles. Essayez de reformuler.",
     de: 'In den verfügbaren Quellen konnte ich keine klare, aktuelle Antwort finden. Bitte formulieren Sie die Frage um.',
