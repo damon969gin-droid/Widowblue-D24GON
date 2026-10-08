@@ -75,8 +75,9 @@ function naturalize(query, text, lang) {
       picked.push(item.s.trim());
       if (picked.length >= 4) break;
     }
-    if (picked.length) t = picked.join(' ');
+    if (picked.length) t = picked.join(' ').replace(/\s+([.!?])/g, '$1');
   }
+  t = t.replace(/^(Sintesi|Riassunto|Overview|Introduzione)\s*[:.\-]\s*/i, '');
   return t;
 }
 
@@ -200,34 +201,58 @@ function tokenize(s) {
 
 export function polish(text, lang) {
   let t = String(text || '').trim();
+  if (!t) return t;
+
   t = t.replace(/#{1,6}\s*/g, '');
   t = t.replace(/\[\.\.\.\]/g, ' ');
   t = t.replace(/\*{1,2}([^*]+)\*{1,2}/g, '$1');
+  t = t.replace(/`{1,3}/g, '');
   t = t.replace(/What Are [^?\n]+\?/gi, '');
   t = t.replace(/\b([A-ZÀ-Ú][a-zà-ú]{2,})\s+\1\b/g, '$1');
+
   t = t.replace(/The sources do not provide[^.]*\./gi, '');
   t = t.replace(/According to the sources[,:]?/gi, '');
   t = t.replace(/as of today's date[,:]?/gi, '');
   t = t.replace(/\b(partial standings|overall winner|definitive answer)\b/gi, '');
-  t = t.replace(/\b(extractive|grounded|RAG|pipeline|provider|Workers AI|system prompt)\b/gi, '');
-  t = t.replace(/\b(Sintesi\s+(Tavily|Serper|Perplexity|Google))\b/gi, '');
-  t = t.replace(/\b(Based on the (search results|information|data)[,:]?)\s*/gi, '');
-  t = t.replace(/\b(From the sources|Dalle fonti|Secondo le fonti)[,:]?\s*/gi, '');
+  t = t.replace(/\b(extractive|grounded|RAG|pipeline|provider|Workers AI|system prompt|OpenRouter)\b/gi, '');
+  t = t.replace(/\b(Sintesi\s+(Tavily|Serper|Perplexity|Google|Exa))\b/gi, '');
+  t = t.replace(/\b(Based on the (search results|information|data|available information)[,:]?)\s*/gi, '');
+  t = t.replace(/\b(From the sources|Dalle fonti|Secondo le fonti|In base alle (informazioni|ricerche)|Come indicato)[,:]?\s*/gi, '');
+  t = t.replace(/^(Certo[!.,]?\s*|Ottima domanda[!.,]?\s*|Buona domanda[!.,]?\s*|Ecco (la risposta|cosa ho trovato)[:.]?\s*)/i, '');
+  t = t.replace(/\b(It is (important|worth) (to )?note that|È (importante|utile) (notare|osservare) che)\b[,:]?\s*/gi, '');
+  t = t.replace(/\b(In conclusion|In sintesi|Per concludere)[,:]?\s*/gi, '');
   t = t.replace(/\beach\s+a\b/gi, 'con');
   t = t.replace(/\beach\s+with\b/gi, 'con');
   t = t.replace(/,\s*each\b/gi, '');
-  if (lang === 'it') {
+
+  t = t.replace(/\s+([,.;:!?])/g, '$1');
+  t = t.replace(/([.!?])\s*([a-zà-ú])/g, function (_, p, c) {
+    return p + ' ' + c.toUpperCase();
+  });
+  t = t.replace(/\s{2,}/g, ' ').replace(/\n{3,}/g, '\n\n').trim();
+
+  if (lang === 'it' || lang === 'IT') {
     t = t.replace(/\bpoints\b/gi, 'punti');
     t = t.replace(/\bfollowed by\b/gi, 'seguita da');
+    t = t.replace(/\bhowever\b/gi, 'tuttavia');
+    t = t.replace(/\btherefore\b/gi, 'quindi');
+    t = t.replace(/\bfor example\b/gi, 'ad esempio');
+    t = t.replace(/\bin fact\b/gi, 'infatti');
+    t = t.replace(/\bcurrently\b/gi, 'attualmente');
+    t = t.replace(/\balso\b/gi, 'anche');
+    t = t.replace(/\bè\s+è\b/gi, 'è');
+    t = t.replace(/\bdi\s+di\b/gi, 'di');
+    t = t.replace(/\bil\s+il\b/gi, 'il');
     const stand = extractStandingsFromText(t);
     if (stand && /classifica|serie|punti|capolista|primo/i.test(t)) return stand;
-    const enMarkers = (t.match(/\b(the|and|with|from|followed|according|sources|does not|provide|which)\b/gi) || []).length;
-    const itMarkers = (t.match(/\b(il|la|di|con|punti|seguita|secondo|classifica|prima|è|sono|della)\b/gi) || []).length;
+    const enMarkers = (t.match(/\b(the|and|with|from|followed|according|sources|does not|provide|which|however|therefore)\b/gi) || []).length;
+    const itMarkers = (t.match(/\b(il|la|di|con|punti|seguita|secondo|classifica|prima|è|sono|della|anche|quindi|tuttavia)\b/gi) || []).length;
     if (enMarkers > itMarkers + 2) {
       const gloss = glossaryAnswer(t, 'it');
       if (gloss) return gloss;
     }
   }
+
   t = t.replace(/\s{2,}/g, ' ').replace(/\n{3,}/g, '\n\n').trim();
   if (t.length > 1800) {
     const cut = t.slice(0, 1800);
