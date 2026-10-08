@@ -1,4 +1,4 @@
-/* WidowBlue app – chat, allegati, voice, agents, image, video, multi-lang */
+/* WidowBlue app – chat, allegati, link cliccabili, voice, agents, multi-lang */
 
 const logEl=document.getElementById('log');
 const qEl=document.getElementById('q');
@@ -20,6 +20,21 @@ let allAgents=false;
 try{allAgents=localStorage.getItem('wb_all_agents')==='1'}catch(e){}
 
 function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')}
+/** Escape + converte URL http(s) in <a> cliccabili */
+function linkify(s){
+  const e=esc(s);
+  return e.replace(
+    /(https?:\/\/[^\s<>"'`\]\)]+[^\s<>"'`\]\)\.,;:!?])/g,
+    function(url){
+      const clean=url.replace(/[),.]+$/,'');
+      const trail=url.slice(clean.length);
+      return '<a href="'+clean+'" target="_blank" rel="noopener noreferrer" class="chat-link">'+clean+'</a>'+trail;
+    }
+  );
+}
+function answerHtml(text){
+  return '<div class="ans-text">'+linkify(text)+'</div>';
+}
 function updateLogTouchMode(){
   if(!logEl)return;
   const has=logEl.querySelector('.msg');
@@ -35,13 +50,13 @@ function pushMemory(role,text,entity,topic){
 function formatSearchAnswer(data){
   const text=(data.answer&&data.answer.text)||data.text||'';
   const sources=(data.rag&&data.rag.sources)||data.results||[];
-  let html='<div class="ans-text">'+esc(text)+'</div>';
+  let html=answerHtml(text);
   if(sources&&sources.length){
     html+='<div class="ans-h">Fonti</div><ol class="ans-src">';
     sources.slice(0,6).forEach(r=>{
       const t=esc(r.title||r.url||''); const u=esc(r.url||'#');
       const p=r.provider?(' <span class="prov">'+esc(r.provider)+'</span>'):'';
-      html+='<li><a href="'+u+'" target="_blank" rel="noopener">'+t+'</a>'+p+'</li>';
+      html+='<li><a href="'+u+'" target="_blank" rel="noopener noreferrer" class="chat-link">'+t+'</a>'+p+'</li>';
     });
     html+='</ol>';
   }
@@ -60,7 +75,7 @@ function appendReply(body){
   const content=document.createElement('div');
   content.className='reply-body';
   if(html) content.innerHTML=html;
-  else content.textContent=plain;
+  else content.innerHTML=answerHtml(plain);
   d.appendChild(content);
   if(videoUrl){
     const v=document.createElement('video');
@@ -68,7 +83,7 @@ function appendReply(body){
     v.style.maxWidth='100%'; v.style.borderRadius='8px'; v.style.marginTop='8px';
     d.appendChild(v);
     const a=document.createElement('a');
-    a.href=videoUrl; a.target='_blank'; a.rel='noopener'; a.textContent='Apri video';
+    a.href=videoUrl; a.target='_blank'; a.rel='noopener noreferrer'; a.className='chat-link'; a.textContent='Apri video';
     a.style.display='inline-block'; a.style.marginTop='6px'; a.style.color='var(--cy)';
     d.appendChild(a);
   } else if(imageUrl){
@@ -340,9 +355,9 @@ async function sendQuery(){
           let url=data.videoUrl||(data.video&&(data.video.url||data.video.videoUrl))||null;
           const project=(data.video&&data.video.project)||data.project||null;
           if(data.video&&data.video.error==='missing_json2video_key'){
-            appendReply({plain:msg,html:'<div class="ans-text">'+esc(msg)+'</div>',videoUrl:null});
+            appendReply({plain:msg,html:answerHtml(msg),videoUrl:null});
           }else if(!url && project){
-            appendReply({plain:msg+' Attendo il render…',html:'<div class="ans-text">'+esc(msg)+' <i>Attendo il render…</i></div>',videoUrl:null});
+            appendReply({plain:msg+' Attendo il render…',html:answerHtml(msg)+' <i>Attendo il render…</i>',videoUrl:null});
             for(let i=0;i<24 && !url;i++){
               await new Promise(r=>setTimeout(r,i===0?3000:5000));
               try{
@@ -351,16 +366,16 @@ async function sendQuery(){
                 if(st&&(st.status==='error'||st.status==='timeout')){msg=st.message||'Errore render video.';break}
               }catch(_e){}
             }
-            if(url) appendReply({plain:msg,html:'<div class="ans-text">'+esc(msg)+'</div>',videoUrl:url});
-            else appendReply({plain:msg.includes('Errore')?msg:('Video ancora in elaborazione. ID: '+project),html:'<div class="ans-text">'+esc(msg.includes('Errore')?msg:('Video ancora in elaborazione. ID: '+project))+'</div>',videoUrl:null});
+            if(url) appendReply({plain:msg,html:answerHtml(msg),videoUrl:url});
+            else appendReply({plain:msg.includes('Errore')?msg:('Video ancora in elaborazione. ID: '+project),html:answerHtml(msg.includes('Errore')?msg:('Video ancora in elaborazione. ID: '+project)),videoUrl:null});
           }else{
-            appendReply({plain:msg,html:'<div class="ans-text">'+esc(msg)+'</div>',videoUrl:url});
+            appendReply({plain:msg,html:answerHtml(msg),videoUrl:url});
           }
           pushMemory('assistant',msg,null,null);
         }else if(data.mode==='image'||(data.image&&data.image.url)){
           const msg=(data.answer&&data.answer.text)||(data.image&&data.image.message)||'Immagine generata.';
           const url=(data.image&&(data.image.url||data.image.imageUrl))||data.imageUrl;
-          appendReply({plain:msg,html:'<div class="ans-text">'+esc(msg)+'</div>',imageUrl:url});
+          appendReply({plain:msg,html:answerHtml(msg),imageUrl:url});
           pushMemory('assistant',msg,null,null);
         }else{
           let formatted=formatSearchAnswer(data);
@@ -370,8 +385,14 @@ async function sendQuery(){
               const enLeak=lang==='it'&&/\b(the|and|with|this|that|is|are)\b/i.test(formatted.plain);
               if(det!==lang||enLeak){
                 const forced=await clientForceLang(formatted.plain,lang);
-                if(forced&&forced.length>15&&!/PLEASE SELECT TWO DISTINCT/i.test(forced))
-                  formatted={plain:forced,html:'<div class="ans-text">'+esc(forced)+'</div>',imageUrl:null};
+                if(forced&&forced.length>15&&!/PLEASE SELECT TWO DISTINCT/i.test(forced)){
+                  const srcMatch=formatted.html&&formatted.html.match(/<div class="ans-h">[\s\S]*$/);
+                  formatted={
+                    plain:forced,
+                    html:answerHtml(forced)+(srcMatch?srcMatch[0]:''),
+                    imageUrl:formatted.imageUrl||null
+                  };
+                }
               }
             }
           }catch(_e){}
@@ -380,10 +401,10 @@ async function sendQuery(){
         }
       }else{
         const errMsg=(data&&data.video&&data.video.message)||(data&&data.message)||'Non è stato possibile completare. Riprova.';
-        appendReply({plain:errMsg,html:null});
+        appendReply({plain:errMsg,html:answerHtml(errMsg)});
       }
-    }else appendReply({plain:'API non disponibile.',html:null});
-  }catch(err){appendReply({plain:'Errore di rete. Riprova.',html:null})}
+    }else appendReply({plain:'API non disponibile.',html:answerHtml('API non disponibile.')});
+  }catch(err){appendReply({plain:'Errore di rete. Riprova.',html:answerHtml('Errore di rete. Riprova.')})}
   if(window.WBNet&&window.WBNet.setRunning) window.WBNet.setRunning(false);
   else window.running=false;
   appBusy=false; if(goBtn)goBtn.disabled=false; scrollLog();

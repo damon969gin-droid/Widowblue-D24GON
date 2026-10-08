@@ -24,6 +24,8 @@ canvas#c{position:fixed;inset:0;width:100%;height:100%;touch-action:none;cursor:
 #log .msg.reply{align-self:flex-start;background:rgba(4,10,18,.55);border:1px solid rgba(77,225,255,.18)}
 #log .msg i{color:var(--am);font-style:normal;font-weight:600;margin-right:4px}
 #log .reply-body{white-space:pre-wrap}
+#log a.chat-link,#log .ans-src a{color:var(--cy);text-decoration:underline;pointer-events:auto;cursor:pointer;word-break:break-all}
+#log a.chat-link:hover,#log .ans-src a:hover{color:var(--am)}
 .toggles{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px;max-width:720px;margin-left:auto;margin-right:auto}
 button.toggle{height:34px;padding:0 12px;border-radius:6px;border:1px solid rgba(77,225,255,.35);background:rgba(4,10,18,.45);color:var(--tx);font:600 12px Rajdhani,sans-serif;cursor:pointer}
 button.toggle.on{border-color:var(--am);color:var(--am)}
@@ -56,8 +58,8 @@ button:disabled{opacity:.5}
 <button class="sec" id="voice" type="button">Voce</button>
 <button id="go" type="button">Invia</button>
 </div></div>
-<script src="wb-api.js?v=20261005att"></script>
-<script src="wb-auth.js?v=20261005att"></script>
-<script src="wb-canvas.js?v=20261005att"></script>
-<script src="wb-app.js?v=20261005att"></script>
+<script src="wb-api.js?v=20261008links"></script>
+<script src="wb-auth.js?v=20261008links"></script>
+<script src="wb-canvas.js?v=20261008links"></script>
+<script src="wb-app.js?v=20261008links"></script>
 </body></html>
