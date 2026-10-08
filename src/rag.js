@@ -181,40 +181,38 @@ async function groundedGenerate(query, context, cited, opts) {
   let topicHint = '';
   if (opts.topic || opts.entity || opts.summary) {
     topicHint =
-      ' MEMORIA CHAT: resta coerente con il filo gia discusso. ' +
+      ' Continuita conversazione: resta sul filo gia aperto' +
       (opts.entity || opts.topic
-        ? 'Argomento in corso: ' + [opts.entity, opts.topic].filter(Boolean).join(' / ') + '. '
+        ? ' (tema: ' + [opts.entity, opts.topic].filter(Boolean).join(' / ') + ')'
         : '') +
-      (opts.summary ? 'Contesto recente: ' + String(opts.summary).slice(0, 500) + '. ' : '') +
-      'Se la domanda e breve o vaga, interpreta rispetto a questo argomento, senza cambiare tema.';
+      (opts.summary ? '. Contesto recente: ' + String(opts.summary).slice(0, 400) : '') +
+      '. Se la domanda e breve, interpretala in questo contesto.';
   }
 
   const system =
-    'Sei un assistente intelligente che risponde al cliente con un ragionamento chiaro e naturale. ' +
-    'OBBLIGO LINGUA: rispondi ESCLUSIVAMENTE in ' +
+    'Sei WidowBlue, un assistente utile e diretto. Parli come una persona reale: chiaro, naturale, senza formalismi inutili. ' +
+    'LINGUA: rispondi SOLO in ' +
     langLabel +
-    '. Ogni frase deve essere in ' +
-    langLabel +
-    '. Non usare altre lingue. ' +
-    'REGOLE: ' +
-    '1) NON copiare le fonti e NON elencare snippet web. ' +
-    '2) Leggi le informazioni, ragiona e SCRIVI una risposta originale con parole tue. ' +
-    '3) Rispondi DIRETTAMENTE alla domanda del cliente (sintesi + spiegazione). ' +
-    '4) Tono conversazionale e professionale, come un collega esperto (2-8 frasi, di piu se serve). ' +
-    '5) Se i fatti sono incompleti, dillo in modo trasparente. ' +
-    '6) Non menzionare provider, RAG, pipeline, "secondo le fonti". ' +
-    '7) Non mischiare lingue. ' +
-    '8) Usa la memoria della chat: se il cliente continua un tema, rispondi su quello anche se non lo ripete. ' +
+    '. Non mischiare lingue. ' +
+    'STILE: ' +
+    '1) Inizia subito con la risposta utile, senza preamboli ("Certo!", "Ottima domanda", "Secondo le fonti"). ' +
+    '2) Frasi scorrevoli e concrete; preferisci 3-6 frasi ben collegate (di piu se la domanda lo richiede). ' +
+    '3) Spiega con parole semplici; se serve un termine tecnico, chiariscilo in una mezza riga. ' +
+    '4) Usa i fatti raccolti ma riscrivili con parole tue: zero copia-incolla di snippet, zero elenchi di link nel testo. ' +
+    '5) Se non sei sicuro o i dati sono parziali, dillo in modo onesto e breve. ' +
+    '6) Non citare provider, RAG, pipeline, modelli o "secondo le fonti/web". ' +
+    '7) Tono amichevole e competente, come un collega che sa di cosa parla. ' +
+    '8) Continuita: se c\'e un filo di chat, resta su quell\'argomento. ' +
     topicHint;
 
   const userMsg =
-    'Domanda del cliente:\n' +
+    'Domanda:\n' +
     query +
-    '\n\nInformazioni raccolte (usale solo come base di fatti, non copiarle):\n' +
+    '\n\nFatti utili (riscrivi, non copiare):\n' +
     context +
-    '\n\nScrivi ora la tua risposta ragionata in ' +
+    '\n\nRispondi in ' +
     langLabel +
-    ', rivolta al cliente, in linguaggio naturale:';
+    ' in modo naturale e diretto:';
 
   // OpenRouter predefinito (OPEN_ROUTER_API_KEY)
   if (env.OPEN_ROUTER_API_KEY && context.length > 40) {
@@ -250,7 +248,7 @@ async function groundedGenerate(query, context, cited, opts) {
       try {
         const refined = await generateWithOpenRouter(
           env.OPEN_ROUTER_API_KEY,
-          system + ' Riscrivi la bozza in forma piu naturale e ragionata, senza copiare:',
+          system + ' Riscrivi questa bozza in ' + langLabel + ' con tono naturale e fluido, come se la spiegassi a voce a un amico competente. Niente elenchi di fonti:',
           'Domanda: ' + query + '\n\nBozza:\n' + synth + '\n\nRisposta riscritta in ' + langLabel + ':',
           env.OPENROUTER_MODEL
         );
@@ -263,7 +261,7 @@ async function groundedGenerate(query, context, cited, opts) {
       try {
         const refined = await generateWithWorkersAI(
           env.AI,
-          system + ' Riscrivi la bozza in forma piu naturale e ragionata, senza copiare:',
+          system + ' Riscrivi questa bozza in ' + langLabel + ' con tono naturale e fluido, come se la spiegassi a voce a un amico competente. Niente elenchi di fonti:',
           'Domanda: ' + query + '\n\nBozza:\n' + synth + '\n\nRisposta riscritta in ' + langLabel + ':'
         );
         if (refined && refined.length > 15) {
@@ -298,7 +296,7 @@ async function generateWithOpenRouter(apiKey, system, user, model) {
         { role: 'system', content: system },
         { role: 'user', content: user },
       ],
-      temperature: 0.35,
+      temperature: 0.45,
       max_tokens: 1200,
     }),
   });
@@ -319,7 +317,7 @@ async function generateWithWorkersAI(AI, system, user) {
       { role: 'user', content: user },
     ],
     max_tokens: 1000,
-    temperature: 0.35,
+    temperature: 0.45,
   });
   const text = (res && (res.response || res.result || res.text)) || (typeof res === 'string' ? res : '');
   return String(text || '').trim().slice(0, 2400);
@@ -335,7 +333,7 @@ async function generateWithPerplexity(apiKey, system, user) {
         { role: 'system', content: system },
         { role: 'user', content: user },
       ],
-      temperature: 0.3,
+      temperature: 0.4,
       max_tokens: 1000,
     }),
   });
